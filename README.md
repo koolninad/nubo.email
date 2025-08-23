@@ -1,3 +1,4 @@
+
 # Nubo.email - All your inboxes, one place
 
 Nubo is an open-source, ultra-modern webmail client. Think of it as the Gmail alternative for 2025 — buttery smooth, minimal, responsive, and elegant.
