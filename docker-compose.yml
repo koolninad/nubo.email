@@ -1,16 +1,18 @@
+version: '3.8'
+
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: nubo-postgres
+    restart: unless-stopped
     environment:
+      POSTGRES_DB: nubo
       POSTGRES_USER: nubo
-      POSTGRES_PASSWORD: nubo123
-      POSTGRES_DB: nubo_email
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nubopass123}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./nubo-backend/src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5432:5432"
     networks:
       - nubo-network
     healthcheck:
@@ -22,17 +24,18 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nubo-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
     ports:
       - "6379:6379"
     networks:
       - nubo-network
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      interval: 10s
+      timeout: 5s
       retries: 5
 
   backend:
@@ -40,44 +43,53 @@ services:
       context: ./nubo-backend
       dockerfile: Dockerfile
     container_name: nubo-backend
-    environment:
-      PORT: 5001
-      DATABASE_URL: postgresql://nubo:nubo123@postgres:5432/nubo_email
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
-      NODE_ENV: production
-      REDIS_URL: redis://redis:6379
-    ports:
-      - "5001:5001"
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+      DATABASE_URL: postgresql://nubo:${POSTGRES_PASSWORD:-nubopass123}@postgres:5432/nubo
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-secret-jwt-key-change-this}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-char-encryption-key-here}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+    volumes:
+      - ./nubo-backend:/app
+      - /app/node_modules
+    ports:
+      - "5001:5001"
     networks:
       - nubo-network
-    restart: unless-stopped
 
   frontend:
     build:
       context: ./nubo-frontend
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: http://localhost:5001/api
     container_name: nubo-frontend
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:5001/api
-    ports:
-      - "3000:3000"
+    restart: unless-stopped
     depends_on:
       - backend
+    environment:
+      NODE_ENV: production
+      API_URL: http://backend:5001/api
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5001/api}
+    volumes:
+      - ./nubo-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
     networks:
       - nubo-network
-    restart: unless-stopped
-
-networks:
-  nubo-network:
-    driver: bridge
 
 volumes:
   postgres_data:
   redis_data:
+
+networks:
+  nubo-network:
+    driver: bridge
