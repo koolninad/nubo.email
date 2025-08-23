@@ -1,0 +1,13 @@
+- Delete all trash option in trash
+- Delete all spam option in spam which will take data to trash
+- delete everything in trash and spam after 30 days 
+- I think the emails are not caching properly, If I click on 1 email read it, then go to second email and go back to first email it again loads which should not be the case.
+- update build number in settings -> about to 2025.08.24
+- Add Github URL https://github.com/koolninad/nubo.email/
+- Website : nubo.email
+- In legal section create privacy policy, Terms of Service, Open Source License, we are using AGPLv3.0
+- Write a comprehensive documentation for Help Center
+- and for contact support, open our compose mail pop up with support@nubo.email prepoulated 
+- In copyright notice © 2025 Nubo.email. All rights reserved. and Made with ❤️ from India
+- Referral link should have https://nubo.email/ref/YOUR_CODE Random code here
+- Remove invite Benefits section

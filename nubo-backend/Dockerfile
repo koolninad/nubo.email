@@ -19,6 +19,12 @@ RUN npm ci --only=production
 
 COPY --from=builder /app/dist ./dist
 
+<<<<<<< HEAD
 EXPOSE 5001
 
 CMD ["node", "dist/index.js"]
+=======
+EXPOSE 5000
+
+CMD ["node", "dist/index.js"]
+>>>>>>> 4c2ebb3 (Initial commit 🚀)

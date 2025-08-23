@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 version: '3.8'
 
 services:
@@ -13,6 +14,21 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+=======
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: nubo-postgres
+    environment:
+      POSTGRES_USER: nubo
+      POSTGRES_PASSWORD: nubo123
+      POSTGRES_DB: nubo_email
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./nubo-backend/src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+>>>>>>> 4c2ebb3 (Initial commit 🚀)
     networks:
       - nubo-network
     healthcheck:
@@ -24,18 +40,31 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nubo-redis
+<<<<<<< HEAD
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+=======
+>>>>>>> 4c2ebb3 (Initial commit 🚀)
     ports:
       - "6379:6379"
     networks:
       - nubo-network
+<<<<<<< HEAD
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
+=======
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+>>>>>>> 4c2ebb3 (Initial commit 🚀)
       retries: 5
 
   backend:
@@ -43,12 +72,24 @@ services:
       context: ./nubo-backend
       dockerfile: Dockerfile
     container_name: nubo-backend
+<<<<<<< HEAD
     restart: unless-stopped
+=======
+    environment:
+      PORT: 5001
+      DATABASE_URL: postgresql://nubo:nubo123@postgres:5432/nubo_email
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "5001:5001"
+>>>>>>> 4c2ebb3 (Initial commit 🚀)
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+<<<<<<< HEAD
     environment:
       NODE_ENV: production
       PORT: 5001
@@ -64,11 +105,17 @@ services:
       - "5001:5001"
     networks:
       - nubo-network
+=======
+    networks:
+      - nubo-network
+    restart: unless-stopped
+>>>>>>> 4c2ebb3 (Initial commit 🚀)
 
   frontend:
     build:
       context: ./nubo-frontend
       dockerfile: Dockerfile
+<<<<<<< HEAD
     container_name: nubo-frontend
     restart: unless-stopped
     depends_on:
@@ -89,7 +136,28 @@ services:
 volumes:
   postgres_data:
   redis_data:
+=======
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:5001/api
+    container_name: nubo-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5001/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - nubo-network
+    restart: unless-stopped
+>>>>>>> 4c2ebb3 (Initial commit 🚀)
 
 networks:
   nubo-network:
     driver: bridge
+<<<<<<< HEAD
+=======
+
+volumes:
+  postgres_data:
+  redis_data:
+>>>>>>> 4c2ebb3 (Initial commit 🚀)
