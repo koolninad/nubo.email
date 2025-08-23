@@ -1,0 +1,62 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# Logs
+logs
+*.log
+*.log.*
+debug.log
+error.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Env files (keep secrets safe!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache
+.cache/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*.tmp
+*.temp
+
+# Coverage
+coverage/
+
+# OS
+Thumbs.db
+ehthumbs.db
+Icon?
+.Spotlight-V100
+.Trashes
+
+# Misc
+*.bak
+*.orig
+
+# Redis / DB dumps (if any)
+dump.rdb
+*.sql
+*.sqlite
+claude.md
