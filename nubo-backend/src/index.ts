@@ -3,6 +3,11 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import pg from 'pg';
 import { createClient } from 'redis';
+import authRoutes from './routes/auth';
+import emailAccountRoutes from './routes/emailAccounts';
+import mailRoutes from './routes/mail';
+import twoFactorRoutes from './routes/two-factor';
+import { authenticateToken } from './middleware/auth';
 
 dotenv.config();
 
@@ -52,21 +57,11 @@ const redis = createClient({
 
 redis.connect().catch(console.error);
 
-// Import routes if they exist
-try {
-  const authRoutes = require('./routes/auth');
-  const emailAccountRoutes = require('./routes/emailAccounts');
-  const mailRoutes = require('./routes/mail');
-  const twoFactorRoutes = require('./routes/two-factor');
-  const { authenticateToken } = require('./middleware/auth');
-  
-  app.use('/api/auth', authRoutes);
-  app.use('/api/email-accounts', authenticateToken, emailAccountRoutes);
-  app.use('/api/mail', authenticateToken, mailRoutes);
-  app.use('/api/2fa', twoFactorRoutes);
-} catch (err) {
-  console.log('Routes not yet implemented');
-}
+// Setup routes
+app.use('/api/auth', authRoutes);
+app.use('/api/email-accounts', authenticateToken, emailAccountRoutes);
+app.use('/api/mail', authenticateToken, mailRoutes);
+app.use('/api/2fa', twoFactorRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

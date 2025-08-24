@@ -8,6 +8,10 @@ echo "================================================"
 
 cd /var/www/nubo
 
+# First, pull latest changes
+echo "Pulling latest changes..."
+git pull origin main
+
 # Fix 1: Update frontend lib/api.ts to correctly handle API URLs
 echo "Fixing lib/api.ts..."
 cat > nubo-frontend/lib/api.ts << 'EOF'
@@ -129,14 +133,19 @@ cat > nubo-frontend/.env.local << 'EOF'
 NEXT_PUBLIC_API_URL=https://api.nubo.email
 EOF
 
-# Rebuild frontend
-echo "Rebuilding frontend..."
-cd nubo-frontend
+# Fix 4: Rebuild backend with correct imports
+echo "Rebuilding backend..."
+cd nubo-backend
 npm run build
 
-# Restart PM2
-echo "Restarting PM2..."
-pm2 restart nubo-frontend
+# Fix 5: Rebuild frontend
+echo "Rebuilding frontend..."
+cd ../nubo-frontend
+npm run build
+
+# Restart PM2 services
+echo "Restarting PM2 services..."
+pm2 restart all
 
 echo "Waiting for services to start..."
 sleep 10
