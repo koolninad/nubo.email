@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pg from 'pg';
-import Redis from 'redis';
+import { createClient } from 'redis';
 
 dotenv.config();
 
@@ -22,7 +22,7 @@ const pool = new pg.Pool({
 });
 
 // Redis connection
-const redis = Redis.createClient({
+const redis = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
