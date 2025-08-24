@@ -18,6 +18,23 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Check username availability
+router.get('/check-username/:username', async (req, res) => {
+  const { username } = req.params;
+  
+  try {
+    const result = await pool.query(
+      'SELECT id FROM users WHERE username = $1',
+      [username]
+    );
+    
+    res.json({ available: result.rows.length === 0 });
+  } catch (error) {
+    console.error('Username check error:', error);
+    res.status(500).json({ error: 'Failed to check username availability' });
+  }
+});
+
 router.post('/signup', async (req, res) => {
   const { username, email, password } = req.body;
 
