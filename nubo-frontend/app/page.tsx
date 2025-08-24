@@ -133,7 +133,8 @@ export default function Home() {
   const [activeFeature, setActiveFeature] = useState(0);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    // Check both localStorage and sessionStorage for token
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (token) {
       router.push('/inbox');
     }

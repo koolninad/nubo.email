@@ -69,9 +69,18 @@ export default function LoginPage() {
       
       showToast(`Welcome back, ${user.username}!`, 'success');
       
+      // Debug logging
+      console.log('Login successful, attempting redirect...');
+      console.log('Token stored in:', rememberMe ? 'localStorage' : 'sessionStorage');
+      console.log('Token value:', token);
+      console.log('User data:', user);
+      
+      // Force a hard navigation using window.location
+      // This ensures the page fully reloads and re-checks auth
       setTimeout(() => {
-        router.push('/inbox');
-      }, 500);
+        console.log('Redirecting to inbox...');
+        window.location.href = '/inbox';
+      }, 100);
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || 'Invalid username or password';
       showToast(errorMessage, 'error');

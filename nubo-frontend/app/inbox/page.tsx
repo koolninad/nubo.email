@@ -28,6 +28,8 @@ import {
 import { EmailAvatar } from '@/components/email/EmailAvatar';
 import { EmailHoverActions } from '@/components/email/EmailHoverActions';
 import { ComposeEmail } from '@/components/email/ComposeEmail';
+import SnoozePopup from '@/components/SnoozePopup';
+import TagPopup from '@/components/TagPopup';
 
 // Generate a color based on account ID
 const getAccountColor = (accountId: number) => {
@@ -98,8 +100,30 @@ export default function InboxPage() {
   const [showAccountMenu, setShowAccountMenu] = useState<number | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionTestResult, setConnectionTestResult] = useState<{success: boolean; message: string} | null>(null);
+  const [snoozePopupOpen, setSnoozePopupOpen] = useState(false);
+  const [snoozeEmailId, setSnoozeEmailId] = useState<number | null>(null);
+  const [tagPopupOpen, setTagPopupOpen] = useState(false);
+  const [tagEmailId, setTagEmailId] = useState<number | null>(null);
+
+  // Function to toggle sidebar and save preference
+  const toggleSidebar = (open?: boolean) => {
+    const newState = open !== undefined ? open : !sidebarOpen;
+    setSidebarOpen(newState);
+    localStorage.setItem('sidebarOpen', String(newState));
+  };
 
   useEffect(() => {
+    console.log('Inbox page mounting...');
+    
+    // Initialize sidebar state from localStorage
+    const savedSidebarState = localStorage.getItem('sidebarOpen');
+    if (savedSidebarState !== null) {
+      setSidebarOpen(savedSidebarState === 'true');
+    } else {
+      // Default: open on desktop, closed on mobile
+      setSidebarOpen(window.innerWidth >= 1024);
+    }
+    
     // Check if mobile
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -107,13 +131,28 @@ export default function InboxPage() {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     
-    const token = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
+    // Check both localStorage and sessionStorage for token
+    const tokenFromLocal = localStorage.getItem('token');
+    const tokenFromSession = sessionStorage.getItem('token');
+    const token = tokenFromLocal || tokenFromSession;
+    
+    const userFromLocal = localStorage.getItem('user');
+    const userFromSession = sessionStorage.getItem('user');
+    const savedUser = userFromLocal || userFromSession;
+    
+    console.log('Auth check in inbox:');
+    console.log('Token from localStorage:', tokenFromLocal ? 'exists' : 'null');
+    console.log('Token from sessionStorage:', tokenFromSession ? 'exists' : 'null');
+    console.log('User from localStorage:', userFromLocal ? 'exists' : 'null');
+    console.log('User from sessionStorage:', userFromSession ? 'exists' : 'null');
     
     if (!token || !savedUser) {
+      console.log('No auth found, redirecting to login...');
       router.push('/login');
       return;
     }
+    
+    console.log('Auth found, loading inbox...');
 
     // Initialize audio elements
     audioRef.current.receive = new Audio('/receive.wav');
@@ -173,10 +212,13 @@ export default function InboxPage() {
         offset: append ? currentOffset : 0
       });
       
+      // Ensure response.data is always an array
+      const emailData = Array.isArray(response.data) ? response.data : [];
+      
       // Check for new emails (for background sync)
-      if (!append && emails.length > 0 && response.data.length > 0) {
-        const latestEmailId = emails[0]?.id;
-        const newEmails = response.data.filter((e: any) => e.id > latestEmailId);
+      if (!append && safeEmails.length > 0 && emailData.length > 0) {
+        const latestEmailId = safeEmails[0]?.id;
+        const newEmails = emailData.filter((e: any) => e.id > latestEmailId);
         if (newEmails.length > 0) {
           // Only play sound and show notification for truly new emails
           // (not on initial load or manual refresh)
@@ -209,14 +251,14 @@ export default function InboxPage() {
       }
       
       if (append) {
-        setEmails([...emails, ...response.data]);
+        setEmails([...safeEmails, ...emailData]);
         setCurrentOffset(currentOffset + PAGE_SIZE);
       } else {
-        setEmails(response.data);
+        setEmails(emailData);
         setCurrentOffset(PAGE_SIZE);
       }
       
-      setHasMore(response.data.length === PAGE_SIZE);
+      setHasMore(emailData.length === PAGE_SIZE);
     } catch (error) {
       console.error('Failed to load emails:', error);
     } finally {
@@ -239,7 +281,11 @@ export default function InboxPage() {
     
     setSyncing(true);
     try {
-      for (const account of emailAccounts) {
+      const accountsToSync = selectedAccountId 
+        ? emailAccounts.filter(a => a.id === selectedAccountId)
+        : emailAccounts;
+      
+      for (const account of accountsToSync) {
         if (folderType) {
           // Sync specific folder
           try {
@@ -248,12 +294,9 @@ export default function InboxPage() {
             console.error(`Failed to sync ${folderType} folder:`, error);
           }
         } else {
-          // Sync inbox by default
-          await mailApi.sync(account.id);
-          
-          // Also sync other important folders
-          const foldersToSync = ['SENT', 'DRAFTS', 'SPAM', 'TRASH'];
-          for (const folder of foldersToSync) {
+          // Sync all folders automatically
+          const folders = ['INBOX', 'SENT', 'DRAFTS', 'SPAM', 'TRASH'];
+          for (const folder of folders) {
             try {
               await api.post(`/mail/sync/${account.id}`, { folder });
             } catch (error) {
@@ -273,7 +316,7 @@ export default function InboxPage() {
   const markAsRead = async (emailId: number) => {
     try {
       await mailApi.update(emailId, { is_read: true });
-      setEmails(emails.map(e => e.id === emailId ? { ...e, is_read: true } : e));
+      setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_read: true } : e));
     } catch (error) {
       console.error('Failed to mark as read:', error);
     }
@@ -282,7 +325,7 @@ export default function InboxPage() {
   const toggleStar = async (emailId: number, isStarred: boolean) => {
     try {
       await mailApi.update(emailId, { is_starred: !isStarred });
-      setEmails(emails.map(e => e.id === emailId ? { ...e, is_starred: !isStarred } : e));
+      setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_starred: !isStarred } : e));
       // Update selectedEmail if it's the one being toggled
       if (selectedEmail && selectedEmail.id === emailId) {
         setSelectedEmailLocal({ ...selectedEmail, is_starred: !isStarred });
@@ -297,10 +340,10 @@ export default function InboxPage() {
       // Immediately update UI for instant feedback
       if (currentView === 'archive') {
         // If we're in archive, just update the flag
-        setEmails(emails.map(e => e.id === emailId ? { ...e, is_archived: true } : e));
+        setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_archived: true } : e));
       } else {
         // Otherwise remove from current view
-        setEmails(emails.filter(e => e.id !== emailId));
+        setEmails(safeEmails.filter(e => e.id !== emailId));
       }
       
       // Clear selected email if it was archived
@@ -320,7 +363,7 @@ export default function InboxPage() {
   const unarchiveEmail = async (emailId: number) => {
     try {
       // Immediately remove from archive view
-      setEmails(emails.filter(e => e.id !== emailId));
+      setEmails(safeEmails.filter(e => e.id !== emailId));
       
       // Clear selected email if it was unarchived
       if (selectedEmailId === emailId) {
@@ -340,9 +383,9 @@ export default function InboxPage() {
     try {
       // Immediately update UI
       if (currentView === 'spam') {
-        setEmails(emails.map(e => e.id === emailId ? { ...e, is_spam: true } : e));
+        setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_spam: true } : e));
       } else {
-        setEmails(emails.filter(e => e.id !== emailId));
+        setEmails(safeEmails.filter(e => e.id !== emailId));
       }
       
       // Clear selected email if it was marked as spam
@@ -367,13 +410,13 @@ export default function InboxPage() {
       
       // If in spam view, remove from list
       if (currentView === 'spam') {
-        setEmails(emails.filter(e => e.id !== emailId));
+        setEmails(safeEmails.filter(e => e.id !== emailId));
         if (selectedEmailId === emailId) {
           setSelectedEmailLocal(null);
         }
       } else {
         // Otherwise just update the flag
-        setEmails(emails.map(e => e.id === emailId ? { ...e, is_spam: false } : e));
+        setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_spam: false } : e));
         if (selectedEmail && selectedEmail.id === emailId) {
           setSelectedEmailLocal({ ...selectedEmail, is_spam: false });
         }
@@ -395,7 +438,7 @@ export default function InboxPage() {
       showToast('Deleting all trash emails...', 'info');
       
       // Get all trash emails
-      const trashEmails = emails.filter(e => e.is_trash);
+      const trashEmails = safeEmails.filter(e => e.is_trash);
       
       // Delete each email permanently (this would need a backend API endpoint)
       for (const email of trashEmails) {
@@ -408,7 +451,7 @@ export default function InboxPage() {
       }
       
       // Clear the UI
-      setEmails(emails.filter(e => !e.is_trash));
+      setEmails(safeEmails.filter(e => !e.is_trash));
       setSelectedEmailLocal(null);
       
       showToast(`Permanently deleted ${trashEmails.length} emails`, 'success');
@@ -427,7 +470,7 @@ export default function InboxPage() {
       showToast('Moving all spam to trash...', 'info');
       
       // Get all spam emails
-      const spamEmails = emails.filter(e => e.is_spam && !e.is_trash);
+      const spamEmails = safeEmails.filter(e => e.is_spam && !e.is_trash);
       
       // Move each to trash
       for (const email of spamEmails) {
@@ -436,9 +479,9 @@ export default function InboxPage() {
       
       // Update the UI
       if (currentView === 'spam') {
-        setEmails(emails.filter(e => !e.is_spam || e.is_trash));
+        setEmails(safeEmails.filter(e => !e.is_spam || e.is_trash));
       } else {
-        setEmails(emails.map(e => 
+        setEmails(safeEmails.map(e => 
           e.is_spam && !e.is_trash 
             ? { ...e, is_trash: true, is_spam: false }
             : e
@@ -459,10 +502,10 @@ export default function InboxPage() {
       // Immediately update UI for instant feedback
       if (currentView === 'trash') {
         // If we're in trash, just update the flag
-        setEmails(emails.map(e => e.id === emailId ? { ...e, is_trash: true } : e));
+        setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_trash: true } : e));
       } else {
         // Otherwise remove from current view
-        setEmails(emails.filter(e => e.id !== emailId));
+        setEmails(safeEmails.filter(e => e.id !== emailId));
       }
       
       // Clear selected email if it was deleted
@@ -483,7 +526,7 @@ export default function InboxPage() {
       // Update the email to remove from trash
       await mailApi.update(emailId, { is_trash: false });
       // Remove from trash view
-      setEmails(emails.filter(e => e.id !== emailId));
+      setEmails(safeEmails.filter(e => e.id !== emailId));
       // Clear selected email if it was restored
       if (selectedEmailId === emailId) {
         setSelectedEmailLocal(null);
@@ -497,17 +540,23 @@ export default function InboxPage() {
   const toggleRead = async (emailId: number, isRead: boolean) => {
     try {
       await mailApi.update(emailId, { is_read: !isRead });
-      setEmails(emails.map(e => e.id === emailId ? { ...e, is_read: !isRead } : e));
+      setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_read: !isRead } : e));
     } catch (error) {
       console.error('Failed to toggle read status:', error);
     }
   };
 
-  const snoozeEmail = async (emailId: number) => {
-    // For now, snooze for 24 hours
-    const snoozedUntil = new Date();
-    snoozedUntil.setHours(snoozedUntil.getHours() + 24);
-    
+  const openSnoozePopup = (emailId: number) => {
+    setSnoozeEmailId(emailId);
+    setSnoozePopupOpen(true);
+  };
+
+  const openTagPopup = (emailId: number) => {
+    setTagEmailId(emailId);
+    setTagPopupOpen(true);
+  };
+
+  const snoozeEmail = async (emailId: number, snoozedUntil: Date) => {
     try {
       await mailApi.update(emailId, { 
         is_snoozed: true,
@@ -516,9 +565,9 @@ export default function InboxPage() {
       
       // Remove from current view if not in snoozed view
       if (currentView === 'snoozed') {
-        setEmails(emails.map(e => e.id === emailId ? { ...e, is_snoozed: true, snoozed_until: snoozedUntil.toISOString() } : e));
+        setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_snoozed: true, snoozed_until: snoozedUntil.toISOString() } : e));
       } else {
-        setEmails(emails.filter(e => e.id !== emailId));
+        setEmails(safeEmails.filter(e => e.id !== emailId));
       }
       
       // Clear selected email if it was snoozed
@@ -526,18 +575,38 @@ export default function InboxPage() {
         setSelectedEmailLocal(null);
       }
       
-      // Show toast notification instead of alert
-      // alert('Email snoozed for 24 hours');
+      showToast(`Email snoozed until ${format(snoozedUntil, 'PPp')}`, 'success');
     } catch (error) {
       console.error('Failed to snooze email:', error);
+      showToast('Failed to snooze email', 'error');
+    }
+  };
+
+  const applyTagsToEmail = async (emailId: number, tags: string[]) => {
+    try {
+      await mailApi.update(emailId, { 
+        labels: tags
+      });
+      
+      // Update email in the list
+      setEmails(safeEmails.map(e => e.id === emailId ? { ...e, labels: tags } : e));
+      
+      // Update selected email if it's the same
+      if (selectedEmail && selectedEmail.id === emailId) {
+        setSelectedEmailLocal({ ...selectedEmail, labels: tags });
+      }
+      
+      showToast(`Tags updated successfully`, 'success');
+    } catch (error) {
+      console.error('Failed to apply tags:', error);
+      showToast('Failed to apply tags', 'error');
     }
   };
 
   const labelEmail = async (emailId: number) => {
-    // Simple label implementation using prompt
-    const currentEmail = emails.find(e => e.id === emailId);
-    const currentLabels = currentEmail?.labels || [];
-    
+    openTagPopup(emailId);
+    return;
+    // Old implementation replaced with custom popup
     const labelInput = prompt(
       `Enter labels (comma-separated)\nCurrent labels: ${currentLabels.join(', ') || 'None'}`,
       currentLabels.join(', ')
@@ -553,7 +622,7 @@ export default function InboxPage() {
         await mailApi.update(emailId, { labels: newLabels });
         
         // Update local state
-        setEmails(emails.map(e => 
+        setEmails(safeEmails.map(e => 
           e.id === emailId ? { ...e, labels: newLabels } : e
         ));
         
@@ -772,8 +841,11 @@ export default function InboxPage() {
     router.push('/login');
   };
 
+  // Helper to ensure emails is always an array
+  const safeEmails = Array.isArray(emails) ? emails : [];
+  
   const getFilteredEmails = () => {
-    let filtered = emails;
+    let filtered = safeEmails;
     
     // Filter by view
     if (currentView === 'starred') {
@@ -813,13 +885,190 @@ export default function InboxPage() {
 
   const filteredEmails = getFilteredEmails();
 
+  // Show welcome screen for new users with no email accounts
+  if (emailAccounts.length === 0 && !loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-950">
+        <div className="text-center space-y-6 max-w-md px-6">
+          <div className="w-20 h-20 bg-neutral-100 dark:bg-neutral-900 rounded-2xl flex items-center justify-center mx-auto">
+            <Mail className="w-10 h-10 text-neutral-600 dark:text-neutral-400" />
+          </div>
+          <h2 className="text-3xl font-bold">Welcome to Nubo!</h2>
+          <p className="text-neutral-600 dark:text-neutral-400">
+            Get started by adding your first email account. You can connect Gmail, Outlook, Yahoo, or any IMAP/SMTP email provider.
+          </p>
+          <Button 
+            size="lg"
+            onClick={() => setAddAccountOpen(true)}
+            className="px-8"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Add Your First Email Account
+          </Button>
+          <p className="text-sm text-neutral-500">
+            Your emails are securely stored and never shared with third parties.
+          </p>
+        </div>
+        
+        {/* Add Account Dialog */}
+        <Dialog open={addAccountOpen} onOpenChange={setAddAccountOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add Email Account</DialogTitle>
+              <DialogDescription>
+                Connect your email account using IMAP/SMTP settings
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={accountForm.email_address}
+                    onChange={(e) => setAccountForm({...accountForm, email_address: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="display">Display Name</Label>
+                  <Input
+                    id="display"
+                    value={accountForm.display_name}
+                    onChange={(e) => setAccountForm({...accountForm, display_name: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="font-medium">IMAP Settings (Incoming Mail)</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="imap-host">IMAP Server</Label>
+                    <Input
+                      id="imap-host"
+                      placeholder="imap.gmail.com"
+                      value={accountForm.imap_host}
+                      onChange={(e) => setAccountForm({...accountForm, imap_host: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="imap-port">Port</Label>
+                    <Input
+                      id="imap-port"
+                      placeholder="993"
+                      value={accountForm.imap_port}
+                      onChange={(e) => setAccountForm({...accountForm, imap_port: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="imap-user">Username</Label>
+                    <Input
+                      id="imap-user"
+                      value={accountForm.imap_username}
+                      onChange={(e) => setAccountForm({...accountForm, imap_username: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="imap-pass">Password</Label>
+                    <Input
+                      id="imap-pass"
+                      type="password"
+                      value={accountForm.imap_password}
+                      onChange={(e) => setAccountForm({...accountForm, imap_password: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="font-medium">SMTP Settings (Outgoing Mail)</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="smtp-host">SMTP Server</Label>
+                    <Input
+                      id="smtp-host"
+                      placeholder="smtp.gmail.com"
+                      value={accountForm.smtp_host}
+                      onChange={(e) => setAccountForm({...accountForm, smtp_host: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="smtp-port">Port</Label>
+                    <Input
+                      id="smtp-port"
+                      placeholder="587"
+                      value={accountForm.smtp_port}
+                      onChange={(e) => setAccountForm({...accountForm, smtp_port: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="smtp-user">Username</Label>
+                    <Input
+                      id="smtp-user"
+                      value={accountForm.smtp_username}
+                      onChange={(e) => setAccountForm({...accountForm, smtp_username: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="smtp-pass">Password</Label>
+                    <Input
+                      id="smtp-pass"
+                      type="password"
+                      value={accountForm.smtp_password}
+                      onChange={(e) => setAccountForm({...accountForm, smtp_password: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              {connectionTestResult && (
+                <div className={`mt-4 p-3 rounded-lg text-sm relative ${
+                  connectionTestResult.success 
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                }`}>
+                  <button
+                    onClick={() => setConnectionTestResult(null)}
+                    className="absolute top-2 right-2 text-current opacity-70 hover:opacity-100"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <div className="pr-8">{connectionTestResult.message}</div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={handleTestConnection}
+                disabled={testingConnection || !accountForm.imap_host || !accountForm.smtp_host}
+              >
+                {testingConnection ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Testing...</>
+                ) : (
+                  'Test Connection'
+                )}
+              </Button>
+              <Button onClick={handleAddAccount} disabled={addingAccount}>
+                {addingAccount ? 'Adding...' : editingAccountId ? 'Update Account' : 'Add Account'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-screen flex bg-neutral-50 dark:bg-neutral-950">
+    <div className="h-screen flex relative overflow-hidden">
+      
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div 
-          className="lg:hidden fixed inset-0 bg-black/50 z-40"
-          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+          onClick={() => toggleSidebar(false)}
         />
       )}
       
@@ -830,18 +1079,18 @@ export default function InboxPage() {
             animate={{ x: 0 }}
             exit={{ x: -280 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed lg:relative w-64 h-full bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex flex-col z-50 lg:z-auto"
+            className="fixed lg:relative w-64 h-full glass-dark backdrop-blur-2xl border-r border-white/10 flex flex-col z-50 lg:z-auto"
           >
-            <div className="p-4 border-b border-neutral-200 dark:border-neutral-800">
+            <div className="p-4 border-b border-white/10">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2">
                   <img src="/logo.png" alt="Nubo" className="w-8 h-8 rounded-lg" />
-                  <span className="font-semibold">Nubo</span>
+                  <span className="font-semibold text-white">Nubo</span>
                 </div>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setSidebarOpen(false)}
+                  onClick={() => toggleSidebar(false)}
                   className="lg:hidden"
                 >
                   <X className="w-4 h-4" />
@@ -906,32 +1155,32 @@ export default function InboxPage() {
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
               <button 
                 onClick={() => handleViewChange('inbox')}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
-                  currentView === 'inbox' ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                  currentView === 'inbox' ? 'bg-white/[0.08] text-white' : 'text-white/70 hover:bg-white/[0.05]'
                 }`}
               >
                 <Inbox className="w-4 h-4" />
                 <span className="font-medium">Inbox</span>
-                {emails.filter(e => !e.is_archived && !e.is_draft && !e.is_spam && !e.is_trash && !e.is_snoozed && !e.is_read).length > 0 && (
+                {safeEmails.filter(e => !e.is_archived && !e.is_draft && !e.is_spam && !e.is_trash && !e.is_snoozed && !e.is_read).length > 0 && (
                   <span className="ml-auto bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                    {emails.filter(e => !e.is_archived && !e.is_draft && !e.is_spam && !e.is_trash && !e.is_snoozed && !e.is_read).length}
+                    {safeEmails.filter(e => !e.is_archived && !e.is_draft && !e.is_spam && !e.is_trash && !e.is_snoozed && !e.is_read).length}
                   </span>
                 )}
               </button>
               <button 
                 onClick={() => handleViewChange('snoozed')}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
-                  currentView === 'snoozed' ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                  currentView === 'snoozed' ? 'bg-white/[0.08] text-white' : 'text-white/70 hover:bg-white/[0.05]'
                 }`}
               >
                 <Clock className="w-4 h-4" />
                 <span>Snoozed</span>
-                <span className="ml-auto text-xs text-neutral-500">{emails.filter(e => e.is_snoozed && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_snoozed && !e.is_trash).length}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('sent')}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
-                  currentView === 'sent' ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                  currentView === 'sent' ? 'bg-white/[0.08] text-white' : 'text-white/70 hover:bg-white/[0.05]'
                 }`}
               >
                 <Send className="w-4 h-4" />
@@ -939,23 +1188,23 @@ export default function InboxPage() {
               </button>
               <button 
                 onClick={() => handleViewChange('drafts')}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
-                  currentView === 'drafts' ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                  currentView === 'drafts' ? 'bg-white/[0.08] text-white' : 'text-white/70 hover:bg-white/[0.05]'
                 }`}
               >
                 <FileText className="w-4 h-4" />
                 <span>Drafts</span>
-                <span className="ml-auto text-xs text-neutral-500">{emails.filter(e => e.is_draft && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_draft && !e.is_trash).length}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('starred')}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
-                  currentView === 'starred' ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                  currentView === 'starred' ? 'bg-white/[0.08] text-white' : 'text-white/70 hover:bg-white/[0.05]'
                 }`}
               >
                 <Star className="w-4 h-4" />
                 <span>Starred</span>
-                <span className="ml-auto text-xs text-neutral-500">{emails.filter(e => e.is_starred && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_starred && !e.is_trash).length}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('archived')}
@@ -965,36 +1214,61 @@ export default function InboxPage() {
               >
                 <Archive className="w-4 h-4" />
                 <span>Archive</span>
-                <span className="ml-auto text-xs text-neutral-500">{emails.filter(e => e.is_archived && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_archived && !e.is_trash).length}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('spam')}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
-                  currentView === 'spam' ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                  currentView === 'spam' ? 'bg-white/[0.08] text-white' : 'text-white/70 hover:bg-white/[0.05]'
                 }`}
               >
                 <AlertCircle className="w-4 h-4" />
                 <span>Spam</span>
-                <span className="ml-auto text-xs text-neutral-500">{emails.filter(e => e.is_spam && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_spam && !e.is_trash).length}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('trash')}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left ${
-                  currentView === 'trash' ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                  currentView === 'trash' ? 'bg-white/[0.08] text-white' : 'text-white/70 hover:bg-white/[0.05]'
                 }`}
               >
                 <Trash className="w-4 h-4" />
                 <span>Trash</span>
-                <span className="ml-auto text-xs text-neutral-500">{emails.filter(e => e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_trash).length}</span>
               </button>
             </nav>
 
             <div className="p-4 border-t border-neutral-200 dark:border-neutral-800">
               <div className="space-y-2">
                 <div className="text-xs font-medium text-neutral-500 mb-2">EMAIL ACCOUNTS</div>
+                {/* All Accounts option */}
+                {emailAccounts.length > 1 && (
+                  <button
+                    onClick={() => {
+                      setSelectedAccount(null);
+                      // Don't close sidebar on desktop, only on mobile
+                      if (window.innerWidth < 1024) {
+                        toggleSidebar(false);
+                      }
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 ${
+                      !selectedAccountId
+                        ? 'bg-neutral-100 dark:bg-neutral-800'
+                        : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                    }`}
+                  >
+                    <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
+                    <span className="flex-1">All Accounts</span>
+                    {safeEmails.filter(e => !e.is_read && !e.is_archived && !e.is_spam && !e.is_trash && !e.is_snoozed).length > 0 && (
+                      <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                        {safeEmails.filter(e => !e.is_read && !e.is_archived && !e.is_spam && !e.is_trash && !e.is_snoozed).length}
+                      </span>
+                    )}
+                  </button>
+                )}
                 {emailAccounts.map(account => {
                   // Count unread emails for this account
-                  const unreadCount = emails.filter(e => 
+                  const unreadCount = safeEmails.filter(e => 
                     e.email_account_id === account.id && 
                     !e.is_read && 
                     !e.is_archived && 
@@ -1006,7 +1280,13 @@ export default function InboxPage() {
                   return (
                     <div key={account.id} className="relative">
                       <button
-                        onClick={() => setSelectedAccount(account.id)}
+                        onClick={() => {
+                          setSelectedAccount(account.id);
+                          // Don't close sidebar on desktop, only on mobile
+                          if (window.innerWidth < 1024) {
+                            toggleSidebar(false);
+                          }
+                        }}
                         className={`w-full text-left px-3 py-2 pr-8 rounded-lg text-sm truncate flex items-center space-x-2 ${
                           selectedAccountId === account.id
                             ? 'bg-neutral-100 dark:bg-neutral-800'
@@ -1179,12 +1459,18 @@ export default function InboxPage() {
                       </div>
                       
                       {connectionTestResult && (
-                        <div className={`mt-4 p-3 rounded-lg text-sm ${
+                        <div className={`mt-4 p-3 rounded-lg text-sm relative ${
                           connectionTestResult.success 
                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                         }`}>
-                          {connectionTestResult.message}
+                          <button
+                            onClick={() => setConnectionTestResult(null)}
+                            className="absolute top-2 right-2 text-current opacity-70 hover:opacity-100"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                          <div className="pr-8">{connectionTestResult.message}</div>
                         </div>
                       )}
                     </div>
@@ -1240,12 +1526,12 @@ export default function InboxPage() {
       </AnimatePresence>
 
       <div className="flex-1 flex flex-col">
-        <header className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-3">
+        <header className="glass-header px-4 py-3">
           <div className="flex items-center space-x-4">
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={() => toggleSidebar()}
               className="lg:hidden"
             >
               <Menu className="w-4 h-4" />
@@ -1254,46 +1540,42 @@ export default function InboxPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setSidebarOpen(true)}
+                onClick={() => toggleSidebar(true)}
                 className="hidden lg:block"
               >
                 <Menu className="w-4 h-4" />
               </Button>
             )}
             <div className="flex-1 max-w-xl relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
               <Input
                 type="text"
                 placeholder="Search emails..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 w-full"
+                className="pl-10 w-full glass-input text-white placeholder:text-white/50"
               />
             </div>
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => handleRefresh(false)}
-              disabled={refreshing}
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
               onClick={() => {
-                const folderMap: Record<string, string> = {
-                  'sent': 'SENT',
-                  'drafts': 'DRAFTS',
-                  'spam': 'SPAM',
-                  'trash': 'TRASH'
-                };
-                syncEmails(folderMap[currentView] || undefined);
+                if (selectedAccountId) {
+                  const folderMap: Record<string, string> = {
+                    'sent': 'SENT',
+                    'drafts': 'DRAFTS',
+                    'spam': 'SPAM',
+                    'trash': 'TRASH'
+                  };
+                  syncEmails(folderMap[currentView] || undefined);
+                } else {
+                  handleRefresh(false);
+                }
               }}
-              disabled={syncing}
-              title={`Sync ${currentView === 'inbox' ? 'all folders' : currentView}`}
+              disabled={refreshing || syncing}
+              title={selectedAccountId ? `Sync ${currentView}` : 'Refresh all'}
             >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${(refreshing || syncing) ? 'animate-spin' : ''}`} />
             </Button>
             
             {/* Delete All buttons for Trash and Spam */}
@@ -1324,7 +1606,7 @@ export default function InboxPage() {
         </header>
 
         <div className="flex flex-1 overflow-hidden">
-          <div className={`${selectedEmail ? 'hidden md:block md:w-2/5' : 'w-full'} border-r border-neutral-200 dark:border-neutral-800 overflow-y-auto`}
+          <div className={`${selectedEmail ? 'w-full md:w-2/5' : 'w-full'} glass backdrop-blur-xl border-r border-white/10 overflow-y-auto`}
                onScroll={(e) => {
                  const target = e.target as HTMLDivElement;
                  if (target.scrollHeight - target.scrollTop <= target.clientHeight + 100) {
@@ -1333,12 +1615,12 @@ export default function InboxPage() {
                }}>
             {loading ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
+                <Loader2 className="w-8 h-8 animate-spin text-white/50" />
               </div>
             ) : filteredEmails.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full">
-                <Inbox className="w-12 h-12 text-neutral-300 mb-4" />
-                <div className="text-neutral-500">
+                <Inbox className="w-12 h-12 text-white/30 mb-4" />
+                <div className="text-white/60">
                   {currentView === 'sent' ? 'No sent emails' : 
                    currentView === 'starred' ? 'No starred emails' :
                    currentView === 'archived' ? 'No archived emails' :
@@ -1428,9 +1710,9 @@ export default function InboxPage() {
                         onMouseEnter={() => setHoveredEmailId(email.id)}
                         onMouseLeave={() => setHoveredEmailId(null)}
                         onClick={() => !bulkSelectMode && handleEmailClick(email)}
-                        className={`p-4 cursor-pointer relative ${
-                          !email.is_read ? 'bg-blue-50/50 dark:bg-blue-900/30 border-l-4 border-blue-500' : ''
-                        } ${selectedEmailId === email.id ? 'bg-neutral-100 dark:bg-neutral-800' : ''}`}
+                        className={`p-4 cursor-pointer relative transition-all ${
+                          !email.is_read ? 'glass border-l-4 border-purple-400' : 'hover:bg-white/[0.03]'
+                        } ${selectedEmailId === email.id ? 'bg-white/[0.08]' : ''}`}
                       >
                         {/* Account color indicator */}
                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${account ? getAccountColor(account.id) : 'bg-gray-400'}`} />
@@ -1527,7 +1809,7 @@ export default function InboxPage() {
                             onRestore={currentView === 'trash' ? () => restoreEmail(email.id) : undefined}
                             onDelete={() => deleteEmail(email.id)}
                             onToggleRead={() => toggleRead(email.id, email.is_read)}
-                            onSnooze={() => snoozeEmail(email.id)}
+                            onSnooze={() => openSnoozePopup(email.id)}
                             onSelect={() => setBulkSelectMode(true)}
                             onLabel={() => labelEmail(email.id)}
                             onSpam={currentView !== 'spam' && currentView !== 'trash' ? () => markAsSpam(email.id) : undefined}
@@ -1548,7 +1830,7 @@ export default function InboxPage() {
           </div>
 
           {selectedEmail && (
-            <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-[700px] bg-white dark:bg-neutral-900 z-50 md:z-auto overflow-y-auto overflow-x-hidden p-4 md:border-l border-neutral-200 dark:border-neutral-800">
+            <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-[700px] glass z-50 md:z-auto overflow-y-auto overflow-x-hidden p-4 md:border-l md:border-white/10">
               <div className="w-full">
                 {/* Mobile back button */}
                 <Button
@@ -1660,7 +1942,7 @@ export default function InboxPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => snoozeEmail(selectedEmail.id)}
+                      onClick={() => openSnoozePopup(selectedEmail.id)}
                     >
                       <Clock className="w-4 h-4 mr-2" />
                       Snooze
@@ -1788,6 +2070,29 @@ export default function InboxPage() {
           )}
         </div>
       </div>
+
+      {/* Custom Popups */}
+      <SnoozePopup
+        isOpen={snoozePopupOpen}
+        onClose={() => setSnoozePopupOpen(false)}
+        onSnooze={(date) => {
+          if (snoozeEmailId) {
+            snoozeEmail(snoozeEmailId, date);
+          }
+        }}
+        emailSubject={safeEmails.find(e => e.id === snoozeEmailId)?.subject}
+      />
+
+      <TagPopup
+        isOpen={tagPopupOpen}
+        onClose={() => setTagPopupOpen(false)}
+        onApplyTags={(tags) => {
+          if (tagEmailId) {
+            applyTagsToEmail(tagEmailId, tags);
+          }
+        }}
+        currentTags={safeEmails.find(e => e.id === tagEmailId)?.labels || []}
+      />
     </div>
   );
 }

@@ -23,7 +23,7 @@ router.get('/inbox', async (req: AuthRequest, res) => {
 
     if (account_id) {
       query = `
-        SELECT ce.*, ea.email_address as account_email 
+        SELECT ce.*, ea.email as account_email 
         FROM cached_emails ce
         JOIN email_accounts ea ON ce.email_account_id = ea.id
         WHERE ea.user_id = $1 AND ea.id = $2 AND NOT ce.is_deleted
@@ -33,7 +33,7 @@ router.get('/inbox', async (req: AuthRequest, res) => {
       params = [req.user!.id, account_id, limit, offset];
     } else {
       query = `
-        SELECT ce.*, ea.email_address as account_email 
+        SELECT ce.*, ea.email as account_email 
         FROM cached_emails ce
         JOIN email_accounts ea ON ce.email_account_id = ea.id
         WHERE ea.user_id = $1 AND NOT ce.is_deleted
@@ -72,10 +72,10 @@ router.get('/email/:emailId/body', async (req: AuthRequest, res) => {
     const email = emailResult.rows[0];
 
     // If we already have the body, return it
-    if (email.text_body || email.html_body) {
+    if (email.body_text || email.body_html) {
       return res.json({
-        text_body: email.text_body,
-        html_body: email.html_body
+        text_body: email.body_text,
+        html_body: email.body_html
       });
     }
 
@@ -87,8 +87,8 @@ router.get('/email/:emailId/body', async (req: AuthRequest, res) => {
       port: email.imap_port,
       secure: isSecure,
       auth: {
-        user: email.imap_username,
-        pass: email.imap_password
+        user: email.username,
+        pass: email.password_encrypted
       },
       logger: false,
       tls: {
@@ -114,7 +114,7 @@ router.get('/email/:emailId/body', async (req: AuthRequest, res) => {
 
           // Update the database with the body
           await pool.query(
-            'UPDATE cached_emails SET text_body = $1, html_body = $2 WHERE id = $3',
+            'UPDATE cached_emails SET body_text = $1, body_html = $2 WHERE id = $3',
             [textBody, htmlBody, emailId]
           );
 
@@ -167,8 +167,8 @@ router.post('/sync/:accountId', async (req: AuthRequest, res) => {
       port: account.imap_port,
       secure: isSecure,
       auth: {
-        user: account.imap_username,
-        pass: account.imap_password
+        user: account.username,
+        pass: account.password_encrypted
       },
       logger: false,
       tls: {
@@ -289,13 +289,12 @@ router.post('/sync/:accountId', async (req: AuthRequest, res) => {
 
           await pool.query(
             `INSERT INTO cached_emails 
-            (email_account_id, uid, message_id, subject, from_address, from_name, 
-             to_addresses, date, text_body, html_body, snippet, is_read,
-             folder, is_draft, is_spam, is_trash) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            (email_account_id, uid, message_id, subject, from_address, 
+             to_address, date, body_text, body_html, is_read,
+             is_draft, is_spam, is_trash) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (email_account_id, uid) 
             DO UPDATE SET 
-              folder = EXCLUDED.folder,
               is_draft = EXCLUDED.is_draft,
               is_spam = EXCLUDED.is_spam,
               is_trash = EXCLUDED.is_trash`,
@@ -305,14 +304,11 @@ router.post('/sync/:accountId', async (req: AuthRequest, res) => {
               envelope.messageId || null,
               envelope.subject || '(No subject)',
               envelope.from?.[0]?.address || '',
-              envelope.from?.[0]?.name || '',
               JSON.stringify(envelope.to || []),
               envelope.date || new Date(),
               textBody,
               htmlBody,
-              snippet,
               message.flags?.has('\\Seen') || false,
-              folderFlags.folder,
               folderFlags.is_draft,
               folderFlags.is_spam,
               folderFlags.is_trash
@@ -335,10 +331,36 @@ router.post('/sync/:accountId', async (req: AuthRequest, res) => {
 });
 
 router.post('/send', async (req: AuthRequest, res) => {
-  const { account_id, to, subject, text, html } = req.body;
+  const { account_id, to, subject, text, html, cc, bcc } = req.body;
+
+  console.log('Send email request received:', {
+    account_id,
+    to,
+    subject,
+    hasText: !!text,
+    hasHtml: !!html,
+    cc,
+    bcc,
+    bodyKeys: Object.keys(req.body)
+  });
 
   if (!account_id || !to || !subject || (!text && !html)) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    console.error('Send email validation failed:', {
+      hasAccountId: !!account_id,
+      hasTo: !!to,
+      hasSubject: !!subject,
+      hasText: !!text,
+      hasHtml: !!html
+    });
+    return res.status(400).json({ 
+      error: 'Missing required fields',
+      details: {
+        account_id: !account_id ? 'Account ID is required' : null,
+        to: !to ? 'Recipient is required' : null,
+        subject: !subject ? 'Subject is required' : null,
+        body: (!text && !html) ? 'Email body is required' : null
+      }
+    });
   }
 
   let account: any; // Declare account in outer scope for error handling
@@ -363,8 +385,8 @@ router.post('/send', async (req: AuthRequest, res) => {
       host: account.smtp_host,
       port: smtpPort,
       secure: isSecure,
-      user: account.smtp_username,
-      from: account.email_address
+      user: account.username,
+      from: account.email
     });
     
     const transporter = nodemailer.createTransport({
@@ -372,8 +394,8 @@ router.post('/send', async (req: AuthRequest, res) => {
       port: smtpPort,
       secure: isSecure, // true for 465, false for other ports
       auth: {
-        user: account.smtp_username,
-        pass: account.smtp_password
+        user: account.username,
+        pass: account.password_encrypted
       },
       tls: {
         rejectUnauthorized: false // Allow self-signed certificates
@@ -388,18 +410,22 @@ router.post('/send', async (req: AuthRequest, res) => {
     await transporter.verify();
     console.log('SMTP connection verified successfully');
     
-    const mailOptions = {
-      from: `"${account.display_name}" <${account.email_address}>`,
+    const mailOptions: any = {
+      from: `"${account.display_name}" <${account.email}>`,
       to,
       subject,
       text,
       html,
       // Add message ID header for better tracking
-      messageId: `<${Date.now()}@${account.email_address.split('@')[1]}>`,
+      messageId: `<${Date.now()}@${account.email.split('@')[1]}>`,
       headers: {
         'X-Mailer': 'Nubo Email Client'
       }
     };
+
+    // Add CC and BCC if provided
+    if (cc) mailOptions.cc = cc;
+    if (bcc) mailOptions.bcc = bcc;
     
     console.log('Sending email with options:', {
       from: mailOptions.from,
@@ -442,6 +468,23 @@ router.post('/send', async (req: AuthRequest, res) => {
     } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
       res.status(400).json({ 
         error: 'Failed to connect to SMTP server. Please check your server host and port settings.' 
+      });
+    } else if (error.message?.includes('IP address different location')) {
+      res.status(403).json({
+        error: 'Email blocked due to IP location security',
+        details: 'Your email provider (CT Mail) has blocked sending from this server because it\'s in a different location than your usual login.',
+        solutions: [
+          '1. Use an app-specific password if CT Mail provides this option',
+          '2. Contact CT Mail support to whitelist this server\'s IP address',
+          '3. Access your email account from this server\'s location once to "train" the system',
+          '4. Use a VPN to match your usual location',
+          '5. Consider using an email relay service like SendGrid for sending'
+        ],
+        technicalInfo: {
+          errorMessage: error.message,
+          serverLocation: 'VPS/Cloud Server',
+          issue: 'Geographic IP restriction'
+        }
       });
     } else if (error.responseCode === 554 || error.message?.includes('relay')) {
       res.status(400).json({ 
@@ -491,11 +534,11 @@ router.post('/draft', async (req: AuthRequest, res) => {
       // Update existing draft
       const result = await pool.query(
         `UPDATE drafts 
-         SET to_addresses = $1, cc_addresses = $2, bcc_addresses = $3, 
-             subject = $4, text_body = $5, html_body = $6, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $7 AND user_id = $8
+         SET to_address = $1, cc_address = $2, bcc_address = $3, 
+             subject = $4, body = $5, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $6 AND user_id = $7
          RETURNING id`,
-        [to, cc, bcc, subject, text_body, html_body, draft_id, req.user!.id]
+        [to, cc, bcc, subject, text_body || html_body, draft_id, req.user!.id]
       );
 
       if (result.rows.length === 0) {
@@ -506,10 +549,10 @@ router.post('/draft', async (req: AuthRequest, res) => {
     } else {
       // Create new draft
       const result = await pool.query(
-        `INSERT INTO drafts (user_id, email_account_id, to_addresses, cc_addresses, bcc_addresses, subject, text_body, html_body)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO drafts (user_id, email_account_id, to_address, cc_address, bcc_address, subject, body)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id`,
-        [req.user!.id, account_id, to, cc, bcc, subject, text_body, html_body]
+        [req.user!.id, account_id, to, cc, bcc, subject, text_body || html_body]
       );
 
       res.json({ message: 'Draft saved', draft_id: result.rows[0].id });
@@ -524,7 +567,7 @@ router.post('/draft', async (req: AuthRequest, res) => {
 router.get('/drafts', async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      `SELECT d.*, ea.email_address, ea.display_name 
+      `SELECT d.*, ea.email, ea.display_name 
        FROM drafts d
        JOIN email_accounts ea ON d.email_account_id = ea.id
        WHERE d.user_id = $1

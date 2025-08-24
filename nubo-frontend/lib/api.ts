@@ -26,7 +26,7 @@ const getApiUrl = () => {
   return `${protocol}//api.${hostname}`;
 };
 
-// Create axios instance without baseURL initially
+// Create axios instance
 const api = axios.create({
   headers: {
     'Content-Type': 'application/json',

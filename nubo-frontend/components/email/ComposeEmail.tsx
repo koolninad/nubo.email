@@ -228,8 +228,8 @@ export function ComposeEmail({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className={`${fullscreen ? 'max-w-full h-screen m-0' : 'max-w-3xl max-h-[90vh]'} p-0 flex flex-col`}>
-        <DialogHeader className="px-4 py-3 border-b">
+      <DialogContent className={`${fullscreen ? 'max-w-full h-screen m-0' : 'max-w-3xl max-h-[90vh]'} p-0 flex flex-col glass border border-white/10`}>
+        <DialogHeader className="px-4 py-3 border-b border-white/10 bg-white/[0.02]">
           <div className="flex items-center justify-between w-full pr-10">
             <div className="flex items-center space-x-3 flex-1">
               <DialogTitle>{isReply ? 'Reply' : isForward ? 'Forward' : 'New Message'}</DialogTitle>
@@ -259,7 +259,7 @@ export function ComposeEmail({
             <div className="flex items-center space-x-2">
               <Label className="w-16">From:</Label>
               <select
-                className="flex-1 px-3 py-2 border rounded-lg"
+                className="flex-1 px-3 py-2 glass-input text-white"
                 value={formData.from}
                 onChange={(e) => setFormData({...formData, from: e.target.value})}
               >
@@ -281,7 +281,7 @@ export function ComposeEmail({
                 placeholder="Recipients"
                 value={formData.to}
                 onChange={(e) => setFormData({...formData, to: e.target.value})}
-                className="flex-1"
+                className="flex-1 glass-input text-white placeholder:text-white/50"
               />
               <button
                 onClick={() => setShowCc(!showCc)}
@@ -307,6 +307,7 @@ export function ComposeEmail({
                 placeholder="Cc recipients"
                 value={formData.cc}
                 onChange={(e) => setFormData({...formData, cc: e.target.value})}
+                className="glass-input text-white placeholder:text-white/50"
               />
             </div>
           )}
@@ -320,6 +321,7 @@ export function ComposeEmail({
                 placeholder="Bcc recipients"
                 value={formData.bcc}
                 onChange={(e) => setFormData({...formData, bcc: e.target.value})}
+                className="glass-input text-white placeholder:text-white/50"
               />
             </div>
           )}
@@ -331,11 +333,12 @@ export function ComposeEmail({
               placeholder="Subject"
               value={formData.subject}
               onChange={(e) => setFormData({...formData, subject: e.target.value})}
+              className="glass-input text-white placeholder:text-white/50"
             />
           </div>
 
           {/* Formatting toolbar */}
-          <div className="border rounded-t-lg p-2 flex items-center space-x-1 flex-wrap">
+          <div className="glass-input rounded-t-lg rounded-b-none p-2 flex items-center space-x-1 flex-wrap">
             <Button
               variant="ghost"
               size="icon"
@@ -426,7 +429,7 @@ export function ComposeEmail({
             )}
             <div
               contentEditable
-              className={`min-h-[200px] p-4 border rounded-b-lg focus:outline-none ${
+              className={`min-h-[200px] p-4 glass-input rounded-t-none focus:outline-none text-white ${
                 formData.confidential ? 'border-red-300 dark:border-red-700 bg-red-50/20 dark:bg-red-950/20' : ''
               }`}
               onInput={(e) => setFormData({...formData, body: e.currentTarget.innerHTML})}
@@ -470,7 +473,7 @@ export function ComposeEmail({
         </div>
 
         {/* Footer actions */}
-        <div className="px-4 py-3 border-t flex items-center justify-between">
+        <div className="px-4 py-3 border-t border-white/10 flex items-center justify-between bg-white/[0.02]">
           <div className="flex items-center space-x-2">
             <input
               ref={fileInputRef}
