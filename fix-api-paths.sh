@@ -1,3 +1,19 @@
+#!/bin/bash
+
+# Fix API paths in production
+
+echo "Fixing API paths..."
+
+# Update the frontend configuration
+cd /var/www/nubo/nubo-frontend
+
+# Update .env.local with correct API URL
+cat > .env.local << 'EOF'
+NEXT_PUBLIC_API_URL=https://api.nubo.email/api
+EOF
+
+# Update lib/api.ts with correct paths
+cat > lib/api.ts << 'EOF'
 import axios from 'axios';
 
 // Dynamically determine API URL based on current domain
@@ -104,3 +120,26 @@ export const mailApi = {
 };
 
 export default api;
+EOF
+
+# Rebuild frontend
+echo "Rebuilding frontend..."
+npm run build
+
+# Restart frontend with PM2
+echo "Restarting frontend..."
+pm2 restart nubo-frontend
+
+echo "Waiting for frontend to start..."
+sleep 10
+
+# Check status
+pm2 status
+
+echo ""
+echo "API paths fixed! The frontend should now correctly call:"
+echo "  - https://api.nubo.email/api/auth/login"
+echo "  - https://api.nubo.email/api/auth/signup"
+echo "  - https://api.nubo.email/api/auth/check-username/:username"
+echo ""
+echo "Try signing up or logging in now!"
