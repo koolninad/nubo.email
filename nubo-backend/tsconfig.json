@@ -11,17 +11,9 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
-<<<<<<< HEAD
-    "allowSyntheticDefaultImports": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
-}
-=======
     "allowSyntheticDefaultImports": true,
     "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
->>>>>>> 4c2ebb3 (Initial commit 🚀)

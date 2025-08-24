@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(npm init:*)",
-      "Bash(docker exec:*)"
+      "Bash(docker exec:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []
