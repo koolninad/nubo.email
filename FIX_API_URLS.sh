@@ -1,26 +1,23 @@
 #!/bin/bash
 
-# Fix API paths in production
+# Simple fix for API URL issues - no more complexity, just direct fixes
 
-echo "Fixing API paths..."
+echo "================================================"
+echo "   API URL Fix - Simple & Direct"
+echo "================================================"
 
-# Update the frontend configuration
-cd /var/www/nubo/nubo-frontend
+cd /var/www/nubo
 
-# Update .env.local with correct API URL
-cat > .env.local << 'EOF'
-NEXT_PUBLIC_API_URL=https://api.nubo.email/api
-EOF
-
-# Update lib/api.ts with correct paths
-cat > lib/api.ts << 'EOF'
+# Fix 1: Update frontend lib/api.ts to correctly handle API URLs
+echo "Fixing lib/api.ts..."
+cat > nubo-frontend/lib/api.ts << 'EOF'
 import axios from 'axios';
 
 // Dynamically determine API URL based on current domain
 const getApiUrl = () => {
   if (typeof window === 'undefined') {
     // Server-side: use environment variable or default
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   }
   
   // Client-side: determine based on current domain
@@ -29,31 +26,24 @@ const getApiUrl = () => {
   
   // Production domains
   if (hostname === 'nubo.email' || hostname === 'www.nubo.email') {
-    return 'https://api.nubo.email/api';
+    return 'https://api.nubo.email';
   }
   
   // Development
   if (hostname === 'localhost') {
-    return 'http://localhost:5000/api';
+    return 'http://localhost:5000';
   }
   
   // For any other domain (custom domains, staging, etc)
   // Assume API is on api.{domain}
-  return `${protocol}//api.${hostname}/api`;
+  return `${protocol}//api.${hostname}`;
 };
 
-// Create axios instance without baseURL initially
+// Create axios instance
 const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-});
-
-// Add request interceptor to set the base URL dynamically
-api.interceptors.request.use((config) => {
-  const apiUrl = getApiUrl();
-  config.baseURL = apiUrl;
-  return config;
 });
 
 // Helper function to get auth token from either localStorage or sessionStorage
@@ -70,11 +60,18 @@ const getAuthToken = () => {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
 };
 
+// Add request interceptor to set the base URL dynamically and add authentication
 api.interceptors.request.use((config) => {
+  const apiUrl = getApiUrl();
+  // Add /api prefix to all requests
+  config.baseURL = apiUrl + '/api';
+  
+  // Add authentication token if available
   const token = getAuthToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
   return config;
 });
 
@@ -122,24 +119,54 @@ export const mailApi = {
 export default api;
 EOF
 
+# Fix 2: Update signup page to use correct API path
+echo "Fixing signup page..."
+sed -i "s|await api.get(\`/api/auth/check-username/\${username}\`)|await api.get(\`/auth/check-username/\${username}\`)|g" nubo-frontend/app/\(auth\)/signup/page.tsx
+
+# Fix 3: Update environment variable (remove /api suffix)
+echo "Updating environment variable..."
+cat > nubo-frontend/.env.local << 'EOF'
+NEXT_PUBLIC_API_URL=https://api.nubo.email
+EOF
+
 # Rebuild frontend
 echo "Rebuilding frontend..."
+cd nubo-frontend
 npm run build
 
-# Restart frontend with PM2
-echo "Restarting frontend..."
+# Restart PM2
+echo "Restarting PM2..."
 pm2 restart nubo-frontend
 
-echo "Waiting for frontend to start..."
+echo "Waiting for services to start..."
 sleep 10
 
-# Check status
-pm2 status
+# Test the API
+echo ""
+echo "Testing API endpoints..."
+echo "========================"
+
+echo -n "1. Health check: "
+curl -s -w "\n   Status: %{http_code}\n" https://api.nubo.email/api/health
+
+echo -n "2. Auth login endpoint: "
+curl -s -X POST https://api.nubo.email/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"test","password":"test"}' \
+  -w "\n   Status: %{http_code}\n" | head -c 100
 
 echo ""
-echo "API paths fixed! The frontend should now correctly call:"
-echo "  - https://api.nubo.email/api/auth/login"
-echo "  - https://api.nubo.email/api/auth/signup"
-echo "  - https://api.nubo.email/api/auth/check-username/:username"
+echo -n "3. Username check endpoint: "
+curl -s -w "\n   Status: %{http_code}\n" https://api.nubo.email/api/auth/check-username/testuser
+
 echo ""
-echo "Try signing up or logging in now!"
+echo "================================================"
+echo "   Fix Applied!"
+echo "================================================"
+echo ""
+echo "API endpoints should now work correctly:"
+echo "  • https://api.nubo.email/api/auth/login"
+echo "  • https://api.nubo.email/api/auth/signup"
+echo "  • https://api.nubo.email/api/auth/check-username/:username"
+echo ""
+echo "Try creating an account at https://nubo.email/signup"

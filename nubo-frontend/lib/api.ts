@@ -4,7 +4,7 @@ import axios from 'axios';
 const getApiUrl = () => {
   if (typeof window === 'undefined') {
     // Server-side: use environment variable or default
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   }
   
   // Client-side: determine based on current domain
@@ -13,17 +13,17 @@ const getApiUrl = () => {
   
   // Production domains
   if (hostname === 'nubo.email' || hostname === 'www.nubo.email') {
-    return 'https://api.nubo.email/api';
+    return 'https://api.nubo.email';
   }
   
   // Development
   if (hostname === 'localhost') {
-    return 'http://localhost:5000/api';
+    return 'http://localhost:5000';
   }
   
   // For any other domain (custom domains, staging, etc)
   // Assume API is on api.{domain}
-  return `${protocol}//api.${hostname}/api`;
+  return `${protocol}//api.${hostname}`;
 };
 
 // Create axios instance without baseURL initially
@@ -31,13 +31,6 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-});
-
-// Add request interceptor to set the base URL dynamically
-api.interceptors.request.use((config) => {
-  const apiUrl = getApiUrl();
-  config.baseURL = apiUrl;
-  return config;
 });
 
 // Helper function to get auth token from either localStorage or sessionStorage
@@ -54,11 +47,18 @@ const getAuthToken = () => {
   return sessionStorage.getItem('token') || localStorage.getItem('token');
 };
 
+// Add request interceptor to set the base URL dynamically and add authentication
 api.interceptors.request.use((config) => {
+  const apiUrl = getApiUrl();
+  // Add /api prefix to all requests
+  config.baseURL = apiUrl + '/api';
+  
+  // Add authentication token if available
   const token = getAuthToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
   return config;
 });
 

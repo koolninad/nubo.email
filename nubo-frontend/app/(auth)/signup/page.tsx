@@ -34,7 +34,7 @@ export default function SignupPage() {
 
       setCheckingUsername(true);
       try {
-        const response = await api.get(`/api/auth/check-username/${username}`);
+        const response = await api.get(`/auth/check-username/${username}`);
         setUsernameAvailable(response.data.available);
       } catch (error) {
         console.error('Failed to check username:', error);
