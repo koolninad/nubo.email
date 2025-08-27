@@ -181,9 +181,12 @@ export default function InboxPage() {
   }, [router]);
 
   useEffect(() => {
+    console.log('useEffect for loadEmails triggered:', { emailAccountsLength: emailAccounts.length, selectedAccountId, emailsLength: emails.length });
     if (emailAccounts.length > 0 && !selectedAccountId) {
+      console.log('Loading emails for all accounts');
       loadEmails();
     } else if (selectedAccountId) {
+      console.log('Loading emails for account:', selectedAccountId);
       loadEmails(selectedAccountId);
     }
   }, [emailAccounts, selectedAccountId]);
@@ -197,7 +200,30 @@ export default function InboxPage() {
     }
   };
 
+  // Format date in user's local timezone
+  const formatLocalDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffHours < 1) {
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      return `${diffMinutes}m ago`;
+    } else if (diffHours < 24) {
+      return format(date, 'h:mm a');
+    } else if (diffDays < 7) {
+      return format(date, 'EEE h:mm a');
+    } else if (date.getFullYear() === now.getFullYear()) {
+      return format(date, 'MMM d');
+    } else {
+      return format(date, 'MMM d, yyyy');
+    }
+  };
+
   const loadEmails = async (accountId?: number, append: boolean = false, silent: boolean = false) => {
+    console.log('loadEmails called with:', { accountId, append, silent, emailsCount: emails.length });
     if (!append && !silent) {
       setLoading(true);
       setCurrentOffset(0);
@@ -637,6 +663,7 @@ export default function InboxPage() {
   };
 
   const handleEmailClick = async (email: any) => {
+    console.log('handleEmailClick called for email:', email.id, 'emails count before:', emails.length);
     // First check if we have a cached version with body
     const cachedEmail = emails.find(e => e.id === email.id);
     
@@ -791,6 +818,7 @@ export default function InboxPage() {
     setCurrentView(view);
     setSelectedEmailLocal(null);
     setSelectedEmail(null);
+    // Don't reload emails when switching views, use cached data
   };
   
   const handleRefresh = async (silent: boolean = false) => {
@@ -805,7 +833,7 @@ export default function InboxPage() {
           await mailApi.sync(account.id);
           
           // Also sync other important folders
-          const foldersToSync = ['SENT', 'DRAFTS', 'SPAM', 'TRASH'];
+          const foldersToSync = ['SENT', 'DRAFTS', 'SPAM', 'TRASH', 'ARCHIVE'];
           for (const folder of foldersToSync) {
             try {
               await api.post(`/mail/sync/${account.id}`, { folder });
@@ -1072,6 +1100,7 @@ export default function InboxPage() {
         />
       )}
       
+      {/* Sidebar - Always takes space on desktop when open */}
       <AnimatePresence>
         {sidebarOpen && (
           <motion.aside
@@ -1079,7 +1108,7 @@ export default function InboxPage() {
             animate={{ x: 0 }}
             exit={{ x: -280 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed lg:relative w-64 h-full glass-dark backdrop-blur-2xl border-r border-white/10 flex flex-col z-50 lg:z-auto"
+            className="fixed lg:static w-64 h-full glass-dark backdrop-blur-2xl border-r border-white/10 flex flex-col z-50 lg:z-auto flex-shrink-0"
           >
             <div className="p-4 border-b border-white/10">
               <div className="flex items-center justify-between mb-4">
@@ -1525,8 +1554,9 @@ export default function InboxPage() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 flex flex-col">
-        <header className="glass-header px-4 py-3">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="glass-header px-4 py-3 flex-shrink-0">
           <div className="flex items-center space-x-4">
             <Button
               variant="ghost"
@@ -1605,8 +1635,10 @@ export default function InboxPage() {
           </div>
         </header>
 
+        {/* Email Content Area */}
         <div className="flex flex-1 overflow-hidden">
-          <div className={`${selectedEmail ? 'w-full md:w-2/5' : 'w-full'} glass backdrop-blur-xl border-r border-white/10 overflow-y-auto`}
+          {/* Email List Panel - Always visible on desktop, full width on mobile when no email selected */}
+          <div className={`${selectedEmail ? 'hidden md:block' : 'block'} ${selectedEmail ? 'md:w-[400px] lg:w-[450px]' : 'w-full'} flex-shrink-0 glass backdrop-blur-xl border-r border-white/10 overflow-y-auto transition-all duration-300`}
                onScroll={(e) => {
                  const target = e.target as HTMLDivElement;
                  if (target.scrollHeight - target.scrollTop <= target.clientHeight + 100) {
@@ -1626,28 +1658,7 @@ export default function InboxPage() {
                    currentView === 'archived' ? 'No archived emails' :
                    'No emails found'}
                 </div>
-                {emailAccounts.length > 0 && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="mt-4" 
-                    onClick={() => {
-                      const folderMap: {[key: string]: string} = {
-                        'snoozed': 'INBOX',
-                        'starred': 'INBOX',
-                        'archive': 'INBOX',
-                        'sent': 'SENT',
-                        'drafts': 'DRAFTS',
-                        'spam': 'SPAM',
-                        'trash': 'TRASH'
-                      };
-                      syncEmails(folderMap[currentView] || undefined);
-                    }}
-                    disabled={syncing}
-                  >
-                    {syncing ? 'Syncing...' : `Sync ${currentView}`}
-                  </Button>
-                )}
+                {/* Auto-sync in background, no manual sync button needed */}
                 {emailAccounts.length === 0 && (
                   <Button variant="outline" size="sm" className="mt-4" onClick={() => setAddAccountOpen(true)}>
                     Add Email Account
@@ -1774,7 +1785,7 @@ export default function InboxPage() {
                                 )}
                               </div>
                               <span className="text-xs text-neutral-500">
-                                {format(new Date(email.date), 'MMM d')}
+                                {formatLocalDate(email.date)}
                               </span>
                             </div>
                             <div className={`text-sm truncate mb-1 ${!email.is_read ? 'font-medium' : ''}`}>
@@ -1829,8 +1840,9 @@ export default function InboxPage() {
             )}
           </div>
 
+          {/* Email Viewer Panel - Takes remaining space on desktop, full screen on mobile */}
           {selectedEmail && (
-            <div className="fixed md:relative inset-0 md:inset-auto w-full md:w-[700px] glass z-50 md:z-auto overflow-y-auto overflow-x-hidden p-4 md:border-l md:border-white/10">
+            <div className="fixed md:relative inset-0 md:inset-auto flex-1 w-full glass z-50 md:z-auto overflow-y-auto p-2 md:p-3">
               <div className="w-full">
                 {/* Mobile back button */}
                 <Button

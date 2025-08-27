@@ -4,7 +4,10 @@
       "Bash(npm install:*)",
       "Bash(npm init:*)",
       "Bash(docker exec:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(chmod:*)",
+      "Bash(sudo -u postgres psql:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

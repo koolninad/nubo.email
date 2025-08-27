@@ -184,7 +184,8 @@ router.post('/sync/:accountId', async (req: AuthRequest, res) => {
       'SENT': ['Sent', 'Sent Items', 'Sent Mail', 'INBOX.Sent', '[Gmail]/Sent Mail'],
       'SPAM': ['Spam', 'Junk', 'Junk E-mail', '[Gmail]/Spam', 'INBOX.Spam'],
       'TRASH': ['Trash', 'Deleted', 'Deleted Items', '[Gmail]/Trash', 'INBOX.Trash'],
-      'DRAFTS': ['Drafts', '[Gmail]/Drafts', 'INBOX.Drafts']
+      'DRAFTS': ['Drafts', '[Gmail]/Drafts', 'INBOX.Drafts'],
+      'ARCHIVE': ['Archive', 'All Mail', '[Gmail]/All Mail', 'INBOX.Archive', 'Archives']
     };
     
     if (folderMappings[folder]) {

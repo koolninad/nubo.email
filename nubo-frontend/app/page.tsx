@@ -48,7 +48,7 @@ const features = [
   {
     icon: <Code className="w-6 h-6" />,
     title: 'Open Source',
-    description: 'MIT licensed, community-driven development with transparent roadmap and contributions.'
+    description: 'We have AGPLv3 license, community-driven development with transparent roadmap and contributions.'
   }
 ];
 
@@ -171,17 +171,13 @@ export default function Home() {
             <span className="text-xl font-bold">Nubo</span>
           </div>
           <nav className="hidden md:flex items-center space-x-8">
-            <a href="#features" className="text-sm hover:text-neutral-900 dark:hover:text-neutral-100">Features</a>
-            <a href="#pricing" className="text-sm hover:text-neutral-900 dark:hover:text-neutral-100">Pricing</a>
-            <a href="#testimonials" className="text-sm hover:text-neutral-900 dark:hover:text-neutral-100">Testimonials</a>
-            <a href="https://docs.nubo.email" className="text-sm hover:text-neutral-900 dark:hover:text-neutral-100">Docs</a>
           </nav>
           <div className="flex items-center space-x-4">
             <Link href="/login">
               <Button variant="ghost">Sign in</Button>
             </Link>
             <Link href="/signup">
-              <Button>Get started free</Button>
+              <Button>Get Started</Button>
             </Link>
           </div>
         </div>
@@ -213,10 +209,10 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
               <Link href="/signup">
                 <Button size="lg" className="px-8 py-6 text-lg">
-                  Start free trial <ArrowRight className="w-5 h-5 ml-2" />
+                  Get Started <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
-              <a href="https://github.com/nubo-email/nubo" target="_blank" rel="noopener noreferrer">
+              <a href="http://github.com/koolninad/nubo.email/" target="_blank" rel="noopener noreferrer">
                 <Button size="lg" variant="outline" className="px-8 py-6 text-lg">
                   <Code className="w-5 h-5 mr-2" /> View source
                 </Button>
@@ -240,29 +236,6 @@ export default function Home() {
           </motion.div>
         </section>
 
-        {/* Live Stats */}
-        <section className="max-w-7xl mx-auto px-6 py-12">
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-6"
-          >
-            {stats.map((stat, index) => (
-              <div key={index} className="bg-white dark:bg-neutral-900 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800">
-                <div className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
-                  {stat.value}
-                </div>
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-                  {stat.label}
-                </div>
-                <div className="text-xs text-green-600 dark:text-green-400 mt-2">
-                  {stat.growth}
-                </div>
-              </div>
-            ))}
-          </motion.div>
-        </section>
 
         {/* Interactive Demo */}
         <section className="max-w-7xl mx-auto px-6 py-24">
@@ -386,112 +359,7 @@ export default function Home() {
           </motion.div>
         </section>
 
-        {/* Pricing */}
-        <section id="pricing" className="max-w-7xl mx-auto px-6 py-24">
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="text-center mb-12">
-              <h2 className="text-4xl font-bold mb-4">Simple, transparent pricing</h2>
-              <p className="text-xl text-neutral-600 dark:text-neutral-400">
-                Start free and scale as you grow
-              </p>
-            </div>
 
-            <div className="grid md:grid-cols-3 gap-8">
-              {pricingPlans.map((plan, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                  className={`bg-white dark:bg-neutral-900 rounded-2xl p-8 border ${
-                    plan.popular 
-                      ? 'border-blue-500 shadow-xl scale-105' 
-                      : 'border-neutral-200 dark:border-neutral-800'
-                  }`}
-                >
-                  {plan.popular && (
-                    <div className="bg-blue-500 text-white text-xs font-semibold px-3 py-1 rounded-full inline-block mb-4">
-                      MOST POPULAR
-                    </div>
-                  )}
-                  <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
-                  <div className="mb-4">
-                    <span className="text-4xl font-bold">{plan.price}</span>
-                    {plan.period && <span className="text-neutral-600 dark:text-neutral-400">{plan.period}</span>}
-                  </div>
-                  <p className="text-neutral-600 dark:text-neutral-400 mb-6">
-                    {plan.description}
-                  </p>
-                  <ul className="space-y-3 mb-8">
-                    {plan.features.map((feature, i) => (
-                      <li key={i} className="flex items-start">
-                        <Check className="w-5 h-5 text-green-500 mr-2 flex-shrink-0 mt-0.5" />
-                        <span className="text-sm">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Button 
-                    className="w-full" 
-                    variant={plan.popular ? 'default' : 'outline'}
-                    size="lg"
-                  >
-                    {plan.cta} <ChevronRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        </section>
-
-        {/* Testimonials */}
-        <section id="testimonials" className="max-w-7xl mx-auto px-6 py-24">
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="text-center mb-12">
-              <h2 className="text-4xl font-bold mb-4">Loved by thousands of users</h2>
-              <p className="text-xl text-neutral-600 dark:text-neutral-400">
-                See what our community has to say
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8">
-              {testimonials.map((testimonial, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                  className="bg-white dark:bg-neutral-900 rounded-2xl p-6 border border-neutral-200 dark:border-neutral-800"
-                >
-                  <div className="flex mb-4">
-                    {[...Array(testimonial.rating)].map((_, i) => (
-                      <Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                    ))}
-                  </div>
-                  <p className="text-neutral-600 dark:text-neutral-400 mb-6">
-                    "{testimonial.content}"
-                  </p>
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full mr-4"></div>
-                    <div>
-                      <div className="font-semibold">{testimonial.name}</div>
-                      <div className="text-sm text-neutral-500">
-                        {testimonial.role} at {testimonial.company}
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        </section>
 
         {/* CTA Section */}
         <section className="max-w-7xl mx-auto px-6 py-24">
@@ -505,31 +373,17 @@ export default function Home() {
               Ready to revolutionize your email?
             </h2>
             <p className="text-xl mb-8 opacity-90">
-              Join thousands of users who've already made the switch
+              Become an early adopter
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/signup">
                 <Button size="lg" className="bg-white text-blue-600 hover:bg-neutral-100 px-8">
-                  Start your free trial <ArrowRight className="w-5 h-5 ml-2" />
+                  Get Started <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
               <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10 px-8">
                 Schedule a demo
               </Button>
-            </div>
-            <div className="mt-8 flex items-center justify-center space-x-6 text-sm">
-              <div className="flex items-center">
-                <Users className="w-4 h-4 mr-2" />
-                <span>10,000+ users</span>
-              </div>
-              <div className="flex items-center">
-                <Heart className="w-4 h-4 mr-2" />
-                <span>4.9/5 rating</span>
-              </div>
-              <div className="flex items-center">
-                <RefreshCw className="w-4 h-4 mr-2" />
-                <span>99.9% uptime</span>
-              </div>
             </div>
           </motion.div>
         </section>
@@ -537,65 +391,13 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-        <div className="max-w-7xl mx-auto px-6 py-12">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <img src="/logo.png" alt="Nubo" className="w-8 h-8 rounded-lg" />
-                <span className="text-lg font-bold">Nubo</span>
-              </div>
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                The open-source email client that respects your privacy.
-              </p>
-              <div className="flex space-x-4 mt-4">
-                <a href="https://github.com/nubo-email" className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">
-                  <Code className="w-5 h-5" />
-                </a>
-                <a href="https://twitter.com/nuboemail" className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8.29 20.251c7.547 0 11.675-6.253 11.675-11.675 0-.178 0-.355-.012-.53A8.348 8.348 0 0022 5.92a8.19 8.19 0 01-2.357.646 4.118 4.118 0 001.804-2.27 8.224 8.224 0 01-2.605.996 4.107 4.107 0 00-6.993 3.743 11.65 11.65 0 01-8.457-4.287 4.106 4.106 0 001.27 5.477A4.072 4.072 0 012.8 9.713v.052a4.105 4.105 0 003.292 4.022 4.095 4.095 0 01-1.853.07 4.108 4.108 0 003.834 2.85A8.233 8.233 0 012 18.407a11.616 11.616 0 006.29 1.84" />
-                  </svg>
-                </a>
-              </div>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Product</h4>
-              <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
-                <li><a href="#features" className="hover:text-neutral-900 dark:hover:text-neutral-100">Features</a></li>
-                <li><a href="#pricing" className="hover:text-neutral-900 dark:hover:text-neutral-100">Pricing</a></li>
-                <li><a href="/changelog" className="hover:text-neutral-900 dark:hover:text-neutral-100">Changelog</a></li>
-                <li><a href="/roadmap" className="hover:text-neutral-900 dark:hover:text-neutral-100">Roadmap</a></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Resources</h4>
-              <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
-                <li><a href="https://docs.nubo.email" className="hover:text-neutral-900 dark:hover:text-neutral-100">Documentation</a></li>
-                <li><a href="/api" className="hover:text-neutral-900 dark:hover:text-neutral-100">API Reference</a></li>
-                <li><a href="/blog" className="hover:text-neutral-900 dark:hover:text-neutral-100">Blog</a></li>
-                <li><a href="/community" className="hover:text-neutral-900 dark:hover:text-neutral-100">Community</a></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Company</h4>
-              <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
-                <li><a href="/about" className="hover:text-neutral-900 dark:hover:text-neutral-100">About</a></li>
-                <li><a href="/privacy" className="hover:text-neutral-900 dark:hover:text-neutral-100">Privacy</a></li>
-                <li><a href="/terms" className="hover:text-neutral-900 dark:hover:text-neutral-100">Terms</a></li>
-                <li><a href="/contact" className="hover:text-neutral-900 dark:hover:text-neutral-100">Contact</a></li>
-              </ul>
-            </div>
-          </div>
-          
-          <div className="border-t border-neutral-200 dark:border-neutral-800 mt-8 pt-8 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between">
             <div className="text-sm text-neutral-600 dark:text-neutral-400">
               © 2025 Nubo. All rights reserved.
             </div>
             <div className="flex items-center space-x-6 text-sm text-neutral-600 dark:text-neutral-400">
-              <span>Made with <Heart className="inline w-4 h-4 text-red-500" /> by the community</span>
+              <span>Made with <Heart className="inline w-4 h-4 text-red-500" /> from India by the community</span>
             </div>
           </div>
         </div>
