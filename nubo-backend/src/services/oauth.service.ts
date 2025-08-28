@@ -3,6 +3,7 @@ import axios from 'axios';
 import { pool } from '../config/database';
 import { getProvider, OAuthProvider } from '../config/oauth-providers';
 import { generateXOAuth2Token } from '../utils/xoauth2';
+import { ProviderOAuthService } from './provider-oauth.service';
 
 interface TokenResponse {
   access_token: string;
@@ -80,22 +81,8 @@ export class OAuthService {
 
   // Build OAuth authorization URL
   static buildAuthUrl(provider: OAuthProvider, state: string, codeChallenge: string): string {
-    console.log('Building auth URL with redirect URI:', provider.redirectUri);
-    const params = new URLSearchParams({
-      client_id: provider.clientId,
-      redirect_uri: provider.redirectUri,
-      response_type: 'code',
-      scope: provider.scope,
-      state: state,
-      access_type: 'offline', // For Google
-      prompt: 'consent', // Force consent to get refresh token
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
-    });
-    
-    const authUrl = `${provider.authUrl}?${params.toString()}`;
-    console.log('Full auth URL:', authUrl);
-    return authUrl;
+    // Use provider-specific OAuth service
+    return ProviderOAuthService.buildAuthUrl(provider, state, codeChallenge);
   }
 
   // Exchange authorization code for tokens
@@ -104,54 +91,14 @@ export class OAuthService {
     code: string, 
     codeVerifier: string
   ): Promise<TokenResponse> {
-    const params = new URLSearchParams({
-      client_id: provider.clientId,
-      client_secret: provider.clientSecret,
-      code: code,
-      redirect_uri: provider.redirectUri,
-      grant_type: 'authorization_code',
-      code_verifier: codeVerifier,
-    });
-    
-    try {
-      const response = await axios.post(provider.tokenUrl, params, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      });
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('Token exchange failed:', error.response?.data || error);
-      throw new Error('Failed to exchange authorization code for tokens');
-    }
+    // Use provider-specific OAuth service
+    return ProviderOAuthService.exchangeCodeForTokens(provider, code, codeVerifier);
   }
 
   // Get user info from provider
   static async getUserInfo(provider: OAuthProvider, accessToken: string): Promise<UserInfo> {
-    if (!provider.userInfoUrl) {
-      throw new Error('User info URL not configured for provider');
-    }
-    
-    try {
-      const response = await axios.get(provider.userInfoUrl, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      
-      // Normalize user info across different providers
-      const data = response.data;
-      return {
-        id: data.id || data.sub || data.user_id,
-        email: data.email || data.mail || data.email_address,
-        name: data.name || data.display_name || data.displayName,
-        picture: data.picture || data.avatar || data.profile_image,
-      };
-    } catch (error: any) {
-      console.error('Failed to get user info:', error.response?.data || error);
-      throw new Error('Failed to get user information from provider');
-    }
+    // Use provider-specific OAuth service
+    return ProviderOAuthService.getUserInfo(provider, accessToken);
   }
 
   // Save OAuth account to database
@@ -216,21 +163,9 @@ export class OAuthService {
       throw new Error('No refresh token available');
     }
     
-    const params = new URLSearchParams({
-      client_id: provider.clientId,
-      client_secret: provider.clientSecret,
-      refresh_token: account.refresh_token,
-      grant_type: 'refresh_token',
-    });
-    
     try {
-      const response = await axios.post(provider.tokenUrl, params, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      });
-      
-      const tokenData: TokenResponse = response.data;
+      // Use provider-specific OAuth service for token refresh
+      const tokenData = await ProviderOAuthService.refreshAccessToken(provider, account.refresh_token);
       const expiresAt = tokenData.expires_in 
         ? new Date(Date.now() + tokenData.expires_in * 1000)
         : null;

@@ -5,6 +5,7 @@ import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
 import { emailCacheOAuthService } from '../services/emailCacheOAuth';
+import { PushNotificationService } from '../services/pushNotifications';
 import { 
   cacheEmailBody, 
   getCachedEmailBody, 
@@ -473,29 +474,69 @@ router.post('/send', async (req: AuthRequest, res) => {
     const smtpPort = parseInt(account.smtp_port);
     const isSecure = smtpPort === 465;
     
+    // Configure authentication based on account type
+    let authConfig: any;
+    
+    if (account.auth_type === 'OAUTH' && account.oauth_account_id) {
+      // OAuth account - get fresh access token and use XOAUTH2
+      console.log('🔐 Using OAuth XOAUTH2 authentication for sending');
+      
+      try {
+        // Get valid access token (refreshes if needed)
+        const { OAuthService } = require('../services/oauth.service');
+        const accessToken = await OAuthService.getValidAccessToken(account.oauth_account_id);
+        
+        // Use XOAUTH2 authentication
+        authConfig = {
+          type: 'oauth2',
+          user: account.smtp_username || account.username,
+          accessToken: accessToken
+        };
+        
+        console.log('✅ XOAUTH2 config ready for:', account.smtp_username || account.username);
+      } catch (tokenError) {
+        console.error('❌ Failed to get OAuth access token:', tokenError);
+        return res.status(401).json({ 
+          error: 'OAuth authentication failed. Please re-authenticate your account.',
+          details: tokenError instanceof Error ? tokenError.message : 'Unknown error'
+        });
+      }
+    } else {
+      // Regular password authentication
+      console.log('🔑 Using password authentication for sending');
+      authConfig = {
+        user: account.smtp_username || account.username,
+        pass: account.smtp_password || account.password_encrypted
+      };
+    }
+    
     console.log('SMTP Configuration:', {
       host: account.smtp_host,
       port: smtpPort,
       secure: isSecure,
-      user: account.username,
+      user: authConfig.user,
+      authType: account.auth_type === 'OAUTH' ? 'XOAUTH2' : 'PASSWORD',
       from: account.email
     });
     
-    const transporter = nodemailer.createTransport({
+    const transporterConfig: any = {
       host: account.smtp_host,
       port: smtpPort,
       secure: isSecure, // true for 465, false for other ports
-      auth: {
-        user: account.username,
-        pass: account.password_encrypted
-      },
+      auth: authConfig,
       tls: {
         rejectUnauthorized: false // Allow self-signed certificates
       },
-      requireTLS: smtpPort === 587, // Force STARTTLS for port 587
       debug: true, // Enable debug output
       logger: true // Log to console
-    });
+    };
+    
+    // Add requireTLS for Microsoft/Outlook on port 587
+    if (smtpPort === 587) {
+      transporterConfig.requireTLS = true;
+    }
+    
+    const transporter = nodemailer.createTransport(transporterConfig);
 
     // Test connection first
     console.log('Testing SMTP connection...');
@@ -536,6 +577,21 @@ router.post('/send', async (req: AuthRequest, res) => {
       rejected: info.rejected,
       envelope: info.envelope 
     });
+    
+    // Send push notification for successful email send
+    try {
+      await PushNotificationService.sendEmailSentNotification(
+        req.user!.id.toString(),
+        {
+          to: to,
+          subject: subject,
+          accountEmail: account.email
+        }
+      );
+      console.log('📱 Push notification sent for email send confirmation');
+    } catch (pushError) {
+      console.error('❌ Failed to send email sent push notification:', pushError);
+    }
     
     res.json({ 
       message: 'Email sent successfully', 
@@ -779,6 +835,22 @@ router.patch('/:emailId', async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Update email error:', error);
     res.status(500).json({ error: 'Failed to update email' });
+  }
+});
+
+// Test push notification endpoint
+router.post('/test-notification', async (req: AuthRequest, res) => {
+  try {
+    const success = await PushNotificationService.sendTestNotification(req.user!.id.toString());
+    
+    if (success) {
+      res.json({ message: 'Test notification sent successfully' });
+    } else {
+      res.status(400).json({ error: 'Failed to send test notification' });
+    }
+  } catch (error) {
+    console.error('Test notification error:', error);
+    res.status(500).json({ error: 'Failed to send test notification' });
   }
 });
 

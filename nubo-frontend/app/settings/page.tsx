@@ -8,6 +8,7 @@ import {
   Smartphone, Key, ChevronRight,
   HelpCircle, FileText, Github, Twitter, Globe
 } from 'lucide-react';
+import { notificationService } from '@/lib/notifications';
 import { TwoFactorSetup } from '@/components/settings/TwoFactorSetup';
 import { ComposeEmail } from '@/components/email/ComposeEmail';
 import { Button } from '@/components/ui/button';
@@ -57,12 +58,17 @@ export default function SettingsPage() {
     notifySyncError: true,
     soundEnabled: true,
     desktopNotifications: false,
+    pushNotifications: false,
     
     // Security
     twoFactorAuth: false,
     sessionTimeout: '30',
     requirePasswordChange: false,
   });
+  
+  // Push notification state
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushSupported, setPushSupported] = useState(true);
 
   useEffect(() => {
     // Check both localStorage and sessionStorage for token
@@ -98,7 +104,64 @@ export default function SettingsPage() {
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
+    
+    // Check push notification status
+    checkPushNotificationStatus();
+    
+    // Set up user ID for push notifications if logged in
+    if (token && savedUser) {
+      const userData = JSON.parse(savedUser);
+      notificationService.setExternalUserId(userData.id?.toString() || userData.email);
+    }
   }, [router]);
+
+  const checkPushNotificationStatus = async () => {
+    try {
+      const isSubscribed = await notificationService.isSubscribed();
+      setPushSubscribed(isSubscribed);
+    } catch (error) {
+      console.error('Failed to check push notification status:', error);
+      setPushSupported(false);
+    }
+  };
+
+  const handlePushNotificationToggle = async (enabled: boolean) => {
+    try {
+      if (enabled) {
+        const success = await notificationService.subscribeToNotifications();
+        if (success) {
+          setPushSubscribed(true);
+          setSettings({...settings, pushNotifications: true});
+          
+          // Set user tags for notification targeting
+          const savedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
+          if (savedUser) {
+            const userData = JSON.parse(savedUser);
+            await notificationService.setUserTags({
+              user_email: userData.email,
+              user_id: userData.id?.toString() || userData.email
+            });
+          }
+          
+          showToast('Push notifications enabled successfully', 'success');
+        } else {
+          showToast('Failed to enable push notifications', 'error');
+        }
+      } else {
+        const success = await notificationService.unsubscribeFromNotifications();
+        if (success) {
+          setPushSubscribed(false);
+          setSettings({...settings, pushNotifications: false});
+          showToast('Push notifications disabled', 'success');
+        } else {
+          showToast('Failed to disable push notifications', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Push notification toggle error:', error);
+      showToast('Failed to update push notification settings', 'error');
+    }
+  };
 
   const handleSaveSettings = () => {
     setLoading(true);
@@ -567,6 +630,83 @@ export default function SettingsPage() {
                     onCheckedChange={(checked) => setSettings({...settings, soundEnabled: checked})}
                   />
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Push Notifications</CardTitle>
+                <CardDescription>Get notified even when Nubo is closed</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!pushSupported ? (
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                      Push notifications are not supported in this browser or environment.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>Enable Push Notifications</Label>
+                        <p className="text-sm text-neutral-500">
+                          Get notified about new emails even when the app is closed
+                        </p>
+                      </div>
+                      <Switch
+                        checked={pushSubscribed}
+                        onCheckedChange={handlePushNotificationToggle}
+                      />
+                    </div>
+                    
+                    {pushSubscribed && (
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Bell className="w-4 h-4 text-green-600 dark:text-green-400" />
+                          <span className="text-sm font-medium text-green-800 dark:text-green-200">
+                            Push notifications are active
+                          </span>
+                        </div>
+                        <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                          You'll receive notifications for new emails, sent confirmations, and sync errors.
+                        </p>
+                      </div>
+                    )}
+                    
+                    <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+                            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+                            const response = await fetch(`${apiUrl}/mail/test-notification`, {
+                              method: 'POST',
+                              headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                              }
+                            });
+                            
+                            if (response.ok) {
+                              showToast('Test notification sent!', 'success');
+                            } else {
+                              showToast('Failed to send test notification', 'error');
+                            }
+                          } catch (error) {
+                            showToast('Failed to send test notification', 'error');
+                          }
+                        }}
+                        disabled={!pushSubscribed}
+                      >
+                        <Bell className="w-4 h-4 mr-2" />
+                        Send Test Notification
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 

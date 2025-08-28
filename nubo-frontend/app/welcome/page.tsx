@@ -92,7 +92,7 @@ export default function WelcomePage() {
     
     setConnectingProvider(provider.id);
     try {
-      const response = await api.post(`/oauth/auth/init/${provider.id}`, {
+      const response = await api.post(`/oauth/welcome/auth/init/${provider.id}`, {
         redirectUrl: `${window.location.origin}/settings/accounts`,
       });
       

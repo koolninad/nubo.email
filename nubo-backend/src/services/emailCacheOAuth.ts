@@ -2,6 +2,7 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { pool } from '../config/database';
 import { OAuthService } from './oauth.service';
+import { PushNotificationService } from './pushNotifications';
 import fs from 'fs';
 import path from 'path';
 
@@ -63,7 +64,16 @@ export class EmailCacheOAuthService {
         }
       }
       
-      // ImapFlow expects accessToken directly, not XOAUTH2 string
+      // Log token details for debugging
+      console.log('🔍 OAuth Token Debug:', {
+        email,
+        tokenLength: accessToken?.length,
+        tokenPrefix: accessToken?.substring(0, 10) + '...',
+        expiresAt: tokenResult.rows[0].token_expires_at,
+        provider: account.auth_type
+      });
+      
+      // ImapFlow handles XOAUTH2 internally when accessToken is provided
       return {
         user: email,
         accessToken: accessToken
@@ -85,6 +95,13 @@ export class EmailCacheOAuthService {
     
     // Get appropriate auth configuration
     const authConfig = await this.getImapAuth(account);
+    console.log(`🔧 Using auth config for ${account.email || account.email_address}:`, {
+      user: authConfig.user,
+      hasPass: !!authConfig.pass,
+      hasAccessToken: !!authConfig.accessToken,
+      host: account.imap_host,
+      port: account.imap_port
+    });
     
     const client = new ImapFlow({
       host: account.imap_host,
@@ -166,9 +183,29 @@ export class EmailCacheOAuthService {
           try {
             // Store the email header
             console.log(`💾 Storing email UID ${message.uid} in ${folder}`);
-            await this.storeEmailHeader(account, folder, message);
+            const emailId = await this.storeEmailHeader(account, folder, message);
             syncedCount++;
             console.log(`✅ Stored email UID ${message.uid}`);
+            
+            // Send push notification for new emails (only for INBOX)
+            if (folder === 'INBOX' && emailId && message.envelope) {
+              try {
+                const envelope = message.envelope;
+                await PushNotificationService.sendNewEmailNotification(
+                  account.user_id.toString(),
+                  {
+                    id: emailId,
+                    subject: envelope.subject || '(No subject)',
+                    fromName: envelope.from?.[0]?.name || '',
+                    fromAddress: envelope.from?.[0]?.address || 'unknown',
+                    accountEmail: account.email || account.email_address || ''
+                  }
+                );
+                console.log(`📱 Push notification sent for new email: ${message.uid}`);
+              } catch (pushError) {
+                console.error(`❌ Failed to send push notification for email ${message.uid}:`, pushError);
+              }
+            }
           } catch (error) {
             console.error(`❌ Failed to store email ${message.uid}:`, error);
           }
@@ -194,9 +231,15 @@ export class EmailCacheOAuthService {
 
     } catch (error: any) {
       console.error(`❌ Sync failed for ${account.email || account.email_address}:`, error.message);
+      console.error(`📍 Error details:`, {
+        code: error.code,
+        authenticationFailed: error.authenticationFailed,
+        response: error.response,
+        stack: error.stack?.split('\n').slice(0, 3).join('\n')
+      });
       
       // Check if it's an authentication error
-      if (error.message?.includes('AUTHENTICATIONFAILED') || error.message?.includes('Invalid credentials')) {
+      if (error.message?.includes('AUTHENTICATIONFAILED') || error.message?.includes('Invalid credentials') || error.authenticationFailed) {
         // Try to refresh the OAuth token if it's an OAuth account
         if (account.auth_type === 'OAUTH' && account.oauth_account_id) {
           console.log('🔄 Attempting to refresh OAuth token...');

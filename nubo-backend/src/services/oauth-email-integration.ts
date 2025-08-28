@@ -27,10 +27,10 @@ export class OAuthEmailIntegration {
     let smtpPassword = '';
     
     if (oauthAccount.auth_method === 'OAUTH') {
-      // For OAuth, we'll use XOAUTH2
-      const xoauth2String = await OAuthService.generateXOAuth2String(oauthAccountId);
-      imapPassword = xoauth2String;
-      smtpPassword = xoauth2String;
+      // For OAuth, we'll store a placeholder since tokens are generated dynamically
+      // Real XOAUTH2 tokens are fetched fresh in emailCacheOAuth and mail services
+      imapPassword = 'OAUTH_TOKEN_PLACEHOLDER';
+      smtpPassword = 'OAUTH_TOKEN_PLACEHOLDER';
     } else {
       // For app password
       imapPassword = oauthAccount.app_password;
@@ -112,14 +112,9 @@ export class OAuthEmailIntegration {
   
   // Update XOAUTH2 token for email account when needed
   static async updateEmailAccountAuth(oauthAccountId: number): Promise<void> {
-    const xoauth2String = await OAuthService.generateXOAuth2String(oauthAccountId);
-    
-    await pool.query(
-      `UPDATE email_accounts 
-       SET imap_password = $1, smtp_password = $1, updated_at = NOW()
-       WHERE oauth_account_id = $2`,
-      [xoauth2String, oauthAccountId]
-    );
+    // No longer needed since we fetch tokens dynamically
+    // Keeping method for backward compatibility but it's a no-op
+    console.log('updateEmailAccountAuth called but no action needed - tokens are fetched dynamically');
   }
   
   // Get all email accounts that need OAuth token refresh

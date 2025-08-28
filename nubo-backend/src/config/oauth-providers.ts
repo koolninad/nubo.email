@@ -44,7 +44,7 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     scope: 'https://mail.google.com/ email profile',
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/auth/callback/google`,
+    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/api/oauth/auth/callback/google`,
     isPopular: true,
     supportedFeatures: {
       oauth: true,
@@ -75,10 +75,10 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     authUrl: 'https://api.login.yahoo.com/oauth2/request_auth',
     tokenUrl: 'https://api.login.yahoo.com/oauth2/get_token',
     userInfoUrl: 'https://api.login.yahoo.com/openid/v1/userinfo',
-    scope: 'openid email profile mail-r mail-w',
+    scope: 'openid profile email',
     clientId: process.env.YAHOO_CLIENT_ID || '',
     clientSecret: process.env.YAHOO_CLIENT_SECRET || '',
-    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/oauth/auth/callback/yahoo`,
+    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/api/oauth/auth/callback/yahoo`,
     isPopular: true,
     supportedFeatures: {
       oauth: true,
@@ -109,10 +109,10 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
     tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
     userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
-    scope: 'https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send openid email profile offline_access',
+    scope: 'offline_access User.Read https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send',
     clientId: process.env.MICROSOFT_CLIENT_ID || '',
     clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
-    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/oauth/auth/callback/microsoft`,
+    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/api/oauth/auth/callback/microsoft`,
     isPopular: true,
     supportedFeatures: {
       oauth: true,
@@ -136,40 +136,6 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     color: '#0078D4',
   },
   
-  proton: {
-    id: 'proton',
-    name: 'proton',
-    displayName: 'Proton Mail',
-    authUrl: '', // Proton requires Bridge/App Password
-    tokenUrl: '',
-    scope: '',
-    clientId: '',
-    clientSecret: '',
-    redirectUri: '',
-    isPopular: true,
-    supportedFeatures: {
-      oauth: false,
-      imap: true, // Via Bridge
-      smtp: true, // Via Bridge
-      refresh: false,
-    },
-    imapConfig: {
-      host: '127.0.0.1', // Proton Bridge local
-      port: 1143,
-      secure: false,
-      authMethod: 'PASSWORD',
-    },
-    smtpConfig: {
-      host: '127.0.0.1', // Proton Bridge local
-      port: 1025,
-      secure: false,
-      authMethod: 'PASSWORD',
-    },
-    logo: '/logos/proton.svg',
-    color: '#6D4AFF',
-    setupInstructions: 'Proton Mail requires the Proton Bridge application. Please install it and use the app password provided by the Bridge.',
-  },
-  
   icloud: {
     id: 'icloud',
     name: 'icloud',
@@ -180,7 +146,7 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     clientId: '',
     clientSecret: '',
     redirectUri: '',
-    isPopular: false,
+    isPopular: true,
     supportedFeatures: {
       oauth: false,
       imap: true,
@@ -199,7 +165,7 @@ export const oauthProviders: Record<string, OAuthProvider> = {
       secure: false,
       authMethod: 'PASSWORD',
     },
-    logo: '/logos/icloud.svg',
+    logo: '/logos/apple.svg',
     color: '#007AFF',
     setupInstructions: 'For iCloud Mail, you need to generate an app-specific password from your Apple ID settings.',
   },
@@ -214,7 +180,7 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     scope: 'ZohoMail.messages.ALL ZohoMail.accounts.READ',
     clientId: process.env.ZOHO_CLIENT_ID || '',
     clientSecret: process.env.ZOHO_CLIENT_SECRET || '',
-    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/oauth/auth/callback/zoho`,
+    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/api/oauth/auth/callback/zoho`,
     isPopular: false,
     supportedFeatures: {
       oauth: true,
@@ -234,7 +200,7 @@ export const oauthProviders: Record<string, OAuthProvider> = {
       secure: true,
       authMethod: 'XOAUTH2',
     },
-    logo: '/logos/zoho.svg',
+    logo: '/logos/zoho.png',
     color: '#DC4A38',
   },
   
@@ -272,28 +238,6 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     setupInstructions: 'Fastmail requires an app-specific password. Generate one from your Fastmail settings.',
   },
   
-  tutanota: {
-    id: 'tutanota',
-    name: 'tutanota',
-    displayName: 'Tutanota',
-    authUrl: '',
-    tokenUrl: '',
-    scope: '',
-    clientId: '',
-    clientSecret: '',
-    redirectUri: '',
-    isPopular: false,
-    supportedFeatures: {
-      oauth: false,
-      imap: false, // Tutanota doesn't support IMAP
-      smtp: false, // Tutanota doesn't support SMTP
-      refresh: false,
-    },
-    logo: '/logos/tutanota.svg',
-    color: '#A01E22',
-    setupInstructions: 'Tutanota does not support standard email protocols (IMAP/SMTP). Integration is limited.',
-  },
-  
   yandex: {
     id: 'yandex',
     name: 'yandex',
@@ -304,7 +248,7 @@ export const oauthProviders: Record<string, OAuthProvider> = {
     scope: 'mail:imap_full mail:smtp mail:user',
     clientId: process.env.YANDEX_CLIENT_ID || '',
     clientSecret: process.env.YANDEX_CLIENT_SECRET || '',
-    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/oauth/auth/callback/yandex`,
+    redirectUri: `${process.env.API_URL || 'https://api.nubo.email'}/api/oauth/auth/callback/yandex`,
     isPopular: false,
     supportedFeatures: {
       oauth: true,
