@@ -211,6 +211,94 @@ select option,
   animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* Email content styles for dark mode */
+.email-content-wrapper {
+  color: #e5e7eb; /* neutral-200 */
+  max-width: none;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.email-content-wrapper,
+.email-html-content {
+  color: #e5e7eb !important; /* neutral-200 */
+}
+
+/* Override inline styles in HTML emails */
+.email-html-content {
+  color: #e5e7eb !important; /* Force light text color */
+  background-color: transparent !important;
+}
+
+.email-html-content *:not(img) {
+  color: #e5e7eb !important; /* Force light color on all elements except images */
+  background-color: transparent !important;
+}
+
+/* Specific overrides for common email elements */
+.email-html-content p,
+.email-html-content span,
+.email-html-content div,
+.email-html-content td,
+.email-html-content th,
+.email-html-content li,
+.email-html-content h1,
+.email-html-content h2,
+.email-html-content h3,
+.email-html-content h4,
+.email-html-content h5,
+.email-html-content h6 {
+  color: #e5e7eb !important;
+  background-color: transparent !important;
+}
+
+.email-html-content a {
+  color: #60a5fa !important; /* blue-400 for links */
+  text-decoration: underline;
+}
+
+.email-html-content a:hover {
+  color: #93bbfc !important; /* blue-300 on hover */
+}
+
+/* Handle tables in emails */
+.email-html-content table {
+  border-color: #374151 !important; /* neutral-700 */
+}
+
+.email-html-content td,
+.email-html-content th {
+  border-color: #374151 !important;
+  padding: 8px;
+  color: #e5e7eb !important;
+}
+
+/* Images in emails */
+.email-html-content img {
+  opacity: 0.9;
+  filter: brightness(0.9);
+  max-width: 100%;
+  height: auto;
+}
+
+/* Blockquotes in emails */
+.email-html-content blockquote {
+  border-left: 4px solid #4b5563 !important; /* neutral-600 */
+  color: #9ca3af !important; /* neutral-400 */
+  padding-left: 1rem;
+  margin-left: 0;
+}
+
+/* Code blocks */
+.email-html-content pre,
+.email-html-content code {
+  background-color: #1f2937 !important; /* neutral-800 */
+  color: #e5e7eb !important;
+  border-color: #374151 !important;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
 /* Mobile responsive utilities */
 @media (max-width: 768px) {
   .sidebar-mobile {

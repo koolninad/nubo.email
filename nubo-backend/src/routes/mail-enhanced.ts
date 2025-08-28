@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool';
 import { AuthRequest } from '../middleware/auth';
 import { EmailCacheService } from '../services/emailCache';
+import { emailCacheOAuthService } from '../services/emailCacheOAuth';
 import { ImapSyncService } from '../services/imapSync';
 import { EmailSearchService } from '../services/emailSearch';
 import nodemailer from 'nodemailer';
@@ -57,9 +58,9 @@ router.get('/emails/:emailId/body', async (req: AuthRequest, res) => {
   const { emailId } = req.params;
 
   try {
-    // Get email and account info
+    // Get email and account info, including OAuth details
     const emailResult = await pool.query(
-      `SELECT ce.*, ea.* 
+      `SELECT ce.*, ea.*, ea.auth_type, ea.oauth_account_id 
        FROM cached_emails ce
        JOIN email_accounts ea ON ce.email_account_id = ea.id
        WHERE ce.id = $1 AND ea.user_id = $2`,
@@ -70,8 +71,29 @@ router.get('/emails/:emailId/body', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Email not found' });
     }
 
-    const account = emailResult.rows[0];
-    const body = await emailCache.fetchEmailBody(parseInt(emailId), account);
+    const emailData = emailResult.rows[0];
+    let body;
+    
+    // Use OAuth service for OAuth accounts
+    if (emailData.auth_type === 'OAUTH' && emailData.oauth_account_id) {
+      // For OAuth accounts, we need to pass the account details and fetch by UID
+      const account = {
+        id: emailData.email_account_id,
+        user_id: emailData.user_id,
+        email: emailData.email || emailData.email_address,
+        email_address: emailData.email_address || emailData.email,
+        imap_host: emailData.imap_host,
+        imap_port: emailData.imap_port,
+        username: emailData.username,
+        password_encrypted: emailData.password_encrypted,
+        oauth_account_id: emailData.oauth_account_id,
+        auth_type: emailData.auth_type
+      };
+      body = await emailCacheOAuthService.fetchEmailBody(account, emailData.folder, emailData.uid);
+    } else {
+      // Regular password auth
+      body = await emailCache.fetchEmailBody(parseInt(emailId), emailData);
+    }
 
     res.json(body);
   } catch (error) {
@@ -101,9 +123,9 @@ router.get('/emails/:emailId/attachments', async (req: AuthRequest, res) => {
     }
 
     const attachments = await pool.query(
-      `SELECT id, filename, content_type, size, content_id, is_inline
-       FROM email_attachments
-       WHERE email_id = $1`,
+      `SELECT id, filename, content_type, size, file_path
+       FROM attachments
+       WHERE cached_email_id = $1`,
       [emailId]
     );
 
@@ -122,11 +144,11 @@ router.get('/attachments/:attachmentId/download', async (req: AuthRequest, res) 
 
   try {
     const attachmentResult = await pool.query(
-      `SELECT ea.*, ce.email_account_id
-       FROM email_attachments ea
-       JOIN cached_emails ce ON ea.email_id = ce.id
+      `SELECT a.*, ce.email_account_id
+       FROM attachments a
+       JOIN cached_emails ce ON a.cached_email_id = ce.id
        JOIN email_accounts acc ON ce.email_account_id = acc.id
-       WHERE ea.id = $1 AND acc.user_id = $2`,
+       WHERE a.id = $1 AND acc.user_id = $2`,
       [attachmentId, req.user!.id]
     );
 
@@ -136,11 +158,11 @@ router.get('/attachments/:attachmentId/download', async (req: AuthRequest, res) 
 
     const attachment = attachmentResult.rows[0];
 
-    if (!attachment.storage_path) {
+    if (!attachment.file_path) {
       return res.status(404).json({ error: 'Attachment file not found' });
     }
 
-    res.download(attachment.storage_path, attachment.filename);
+    res.download(attachment.file_path, attachment.filename);
   } catch (error) {
     console.error('Download attachment error:', error);
     res.status(500).json({ error: 'Failed to download attachment' });

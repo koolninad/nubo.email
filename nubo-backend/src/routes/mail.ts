@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
+import { emailCacheOAuthService } from '../services/emailCacheOAuth';
 import { 
   cacheEmailBody, 
   getCachedEmailBody, 
@@ -56,9 +57,9 @@ router.get('/email/:emailId/body', async (req: AuthRequest, res) => {
   const { emailId } = req.params;
 
   try {
-    // First check if we have the body cached
+    // First check if we have the body cached - include OAuth info
     const emailResult = await pool.query(
-      `SELECT ce.*, ea.* 
+      `SELECT ce.*, ea.*, ea.auth_type, ea.oauth_account_id 
        FROM cached_emails ce
        JOIN email_accounts ea ON ce.email_account_id = ea.id
        WHERE ce.id = $1 AND ea.user_id = $2`,
@@ -72,14 +73,37 @@ router.get('/email/:emailId/body', async (req: AuthRequest, res) => {
     const email = emailResult.rows[0];
 
     // If we already have the body, return it
-    if (email.body_text || email.body_html) {
+    if (email.text_body || email.html_body) {
       return res.json({
-        text_body: email.body_text,
-        html_body: email.body_html
+        text_body: email.text_body || '',
+        html_body: email.html_body || ''
       });
     }
 
-    // Otherwise, fetch it from IMAP
+    // Check if this is an OAuth account
+    if (email.auth_type === 'OAUTH' && email.oauth_account_id) {
+      // Use OAuth service for OAuth accounts
+      const account = {
+        id: email.email_account_id,
+        user_id: email.user_id,
+        email: email.email || email.email_address,
+        email_address: email.email_address || email.email,
+        imap_host: email.imap_host,
+        imap_port: email.imap_port,
+        username: email.username,
+        password_encrypted: email.password_encrypted,
+        oauth_account_id: email.oauth_account_id,
+        auth_type: email.auth_type
+      };
+      
+      const body = await emailCacheOAuthService.fetchEmailBody(account, email.folder, email.uid);
+      return res.json({
+        text_body: body.text,
+        html_body: body.html
+      });
+    }
+
+    // Otherwise, fetch it from IMAP using regular auth
     const isSecure = email.imap_port === 993;
     
     const client = new ImapFlow({
@@ -114,7 +138,7 @@ router.get('/email/:emailId/body', async (req: AuthRequest, res) => {
 
           // Update the database with the body
           await pool.query(
-            'UPDATE cached_emails SET body_text = $1, body_html = $2 WHERE id = $3',
+            'UPDATE cached_emails SET text_body = $1, html_body = $2 WHERE id = $3',
             [textBody, htmlBody, emailId]
           );
 
@@ -328,6 +352,73 @@ router.post('/sync/:accountId', async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Sync error:', error);
     res.status(500).json({ error: 'Failed to sync emails' });
+  }
+});
+
+/**
+ * Get email attachments
+ */
+router.get('/emails/:emailId/attachments', async (req: AuthRequest, res) => {
+  const { emailId } = req.params;
+  
+  try {
+    // Verify email ownership
+    const emailCheck = await pool.query(
+      `SELECT ce.id 
+       FROM cached_emails ce
+       JOIN email_accounts ea ON ce.email_account_id = ea.id
+       WHERE ce.id = $1 AND ea.user_id = $2`,
+      [emailId, req.user!.id]
+    );
+
+    if (emailCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    const attachments = await pool.query(
+      `SELECT id, filename, content_type, size, storage_path as file_path
+       FROM email_attachments
+       WHERE email_id = $1`,
+      [emailId]
+    );
+
+    res.json(attachments.rows);
+  } catch (error) {
+    console.error('Get attachments error:', error);
+    res.status(500).json({ error: 'Failed to fetch attachments' });
+  }
+});
+
+/**
+ * Download attachment
+ */
+router.get('/attachments/:attachmentId/download', async (req: AuthRequest, res) => {
+  const { attachmentId } = req.params;
+
+  try {
+    const attachmentResult = await pool.query(
+      `SELECT ea.*, ce.email_account_id
+       FROM email_attachments ea
+       JOIN cached_emails ce ON ea.email_id = ce.id
+       JOIN email_accounts acc ON ce.email_account_id = acc.id
+       WHERE ea.id = $1 AND acc.user_id = $2`,
+      [attachmentId, req.user!.id]
+    );
+
+    if (attachmentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    const attachment = attachmentResult.rows[0];
+
+    if (!attachment.storage_path) {
+      return res.status(404).json({ error: 'Attachment file not found' });
+    }
+
+    res.download(attachment.storage_path, attachment.filename);
+  } catch (error) {
+    console.error('Download attachment error:', error);
+    res.status(500).json({ error: 'Failed to download attachment' });
   }
 });
 

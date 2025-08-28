@@ -9,8 +9,9 @@ import authEnhancedRoutes from './routes/auth-enhanced';
 import adminRoutes from './routes/admin';
 import emailAccountRoutes from './routes/emailAccounts';
 import mailRoutes from './routes/mail';
-import mailEnhancedRoutes from './routes/mail-enhanced';
+// import mailEnhancedRoutes from './routes/mail-enhanced';
 import twoFactorRoutes from './routes/two-factor';
+import oauthRoutes from './routes/oauth.routes';
 import { authenticateToken } from './middleware/auth';
 import { BackgroundJobService } from './services/backgroundJobs';
 import { backgroundEmailSync } from './services/backgroundEmailSync';
@@ -76,8 +77,12 @@ app.use('/api/auth-v2', authEnhancedRoutes); // Enhanced auth with refresh token
 app.use('/api/admin', adminRoutes); // Admin panel routes
 app.use('/api/email-accounts', authenticateToken, emailAccountRoutes);
 app.use('/api/mail', authenticateToken, mailRoutes);
-app.use('/api/mail-v2', authenticateToken, mailEnhancedRoutes); // Enhanced mail routes with caching
+// app.use('/api/mail-v2', authenticateToken, mailEnhancedRoutes); // Enhanced mail routes with caching
 app.use('/api/2fa', twoFactorRoutes);
+app.use('/api/oauth', oauthRoutes); // OAuth routes for provider authentication
+
+// Also mount OAuth routes at root for Google callback compatibility
+app.use('/', oauthRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

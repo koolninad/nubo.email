@@ -1,6 +1,7 @@
 import * as cron from 'node-cron';
 import { pool } from '../db/pool';
 import { EmailCacheService, EmailAccount } from './emailCache';
+import { emailCacheOAuthService, EmailAccount as OAuthEmailAccount } from './emailCacheOAuth';
 import { createClient } from 'redis';
 
 interface EmailSyncJob {
@@ -156,9 +157,9 @@ export class BackgroundEmailSyncService {
       job.status = 'syncing';
       this.syncJobs.set(accountId, job);
 
-      // Get account details
+      // Get account details with OAuth info
       const accountResult = await pool.query(`
-        SELECT ea.*
+        SELECT ea.*, ea.oauth_account_id, ea.auth_type
         FROM email_accounts ea
         WHERE ea.id = $1
       `, [accountId]);
@@ -168,10 +169,13 @@ export class BackgroundEmailSyncService {
       }
 
       const account = accountResult.rows[0];
-      const emailAccount: EmailAccount = account;
+      const emailAccount: any = account; // Can be either EmailAccount or OAuthEmailAccount
 
-      // Sync main folders
-      const folders = ['INBOX', 'SENT', 'DRAFTS'];
+      // Determine folders based on provider (Gmail uses different names)
+      let folders = ['INBOX', 'SENT', 'DRAFTS'];
+      if (account.auth_type === 'OAUTH' && account.imap_host === 'imap.gmail.com') {
+        folders = ['INBOX', '[Gmail]/Sent Mail', '[Gmail]/Drafts'];
+      }
       const syncResults = [];
 
       for (const folder of folders) {
@@ -191,11 +195,18 @@ export class BackgroundEmailSyncService {
             }
           }
 
-          const result = await this.emailCache.syncFolderHeaders(
-            emailAccount, 
-            folder, 
-            emailLimit
-          );
+          // Use OAuth service for OAuth accounts, regular service for others
+          const result = account.auth_type === 'OAUTH' && account.oauth_account_id
+            ? await emailCacheOAuthService.syncFolderHeaders(
+                emailAccount, 
+                folder, 
+                emailLimit
+              )
+            : await this.emailCache.syncFolderHeaders(
+                emailAccount, 
+                folder, 
+                emailLimit
+              );
           
           syncResults.push({ folder, ...result });
 
@@ -240,7 +251,7 @@ export class BackgroundEmailSyncService {
    */
   private async prefetchEmailBodies(
     accountId: number, 
-    account: EmailAccount, 
+    account: any, // Can be either EmailAccount or OAuthEmailAccount 
     folder: string, 
     limit: number = 10
   ) {
@@ -260,7 +271,12 @@ export class BackgroundEmailSyncService {
       for (const email of result.rows) {
         try {
           console.log(`📄 Prefetching body for: ${email.subject}`);
-          await this.emailCache.fetchEmailBody(email.id, account);
+          // Use OAuth service for OAuth accounts
+          if (account.auth_type === 'OAUTH' && account.oauth_account_id) {
+            await emailCacheOAuthService.fetchEmailBody(account, folder, email.uid);
+          } else {
+            await this.emailCache.fetchEmailBody(email.id, account);
+          }
           
           // Add small delay to avoid overwhelming IMAP server
           await new Promise(resolve => setTimeout(resolve, 500));

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,7 +8,8 @@ import { format } from 'date-fns';
 import { 
   Mail, Plus, Inbox, Star, Archive, Send, Search, 
   RefreshCw, Settings, LogOut, Menu, X, Loader2, Edit2, Trash2, MoreVertical,
-  FileText, AlertCircle, Trash, Clock, Reply, ReplyAll, Forward, Printer, RotateCcw, ArrowLeft
+  FileText, AlertCircle, Trash, Clock, Reply, ReplyAll, Forward, Printer, RotateCcw, ArrowLeft,
+  Paperclip, Download, Eye
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { emailAccountsApi, mailApi } from '@/lib/api';
@@ -31,21 +32,6 @@ import { ComposeEmail } from '@/components/email/ComposeEmail';
 import SnoozePopup from '@/components/SnoozePopup';
 import TagPopup from '@/components/TagPopup';
 
-// Generate a color based on account ID
-const getAccountColor = (accountId: number) => {
-  const colors = [
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-purple-500',
-    'bg-orange-500',
-    'bg-pink-500',
-    'bg-yellow-500',
-    'bg-red-500',
-    'bg-indigo-500',
-  ];
-  return colors[accountId % colors.length];
-};
-
 export default function InboxPage() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -58,6 +44,45 @@ export default function InboxPage() {
     sent: null
   });
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Generate a color based on account
+  const getAccountColor = (accountOrId: any) => {
+    // Handle both account object and ID
+    const account = typeof accountOrId === 'object' ? accountOrId : emailAccounts.find((a: any) => a.id === accountOrId);
+    
+    // Check if it's an OAuth account and use provider-specific colors
+    if (account?.auth_type === 'OAUTH' || account?.oauth_account_id) {
+      // Try to detect provider from email domain
+      const email = account.email_address?.toLowerCase() || '';
+      if (email.includes('gmail.com') || email.includes('googlemail.com')) {
+        return 'bg-red-500'; // Gmail red
+      } else if (email.includes('outlook.com') || email.includes('hotmail.com') || email.includes('live.com')) {
+        return 'bg-blue-600'; // Outlook blue
+      } else if (email.includes('yahoo.com')) {
+        return 'bg-purple-600'; // Yahoo purple
+      } else if (email.includes('proton')) {
+        return 'bg-purple-700'; // Proton purple
+      } else if (email.includes('icloud.com') || email.includes('me.com') || email.includes('mac.com')) {
+        return 'bg-gray-600'; // iCloud gray
+      } else if (email.includes('zoho')) {
+        return 'bg-red-600'; // Zoho red
+      }
+    }
+    
+    // Default colors for non-OAuth accounts
+    const colors = [
+      'bg-blue-500',
+      'bg-green-500',
+      'bg-purple-500',
+      'bg-orange-500',
+      'bg-pink-500',
+      'bg-yellow-500',
+      'bg-red-500',
+      'bg-indigo-500',
+    ];
+    const accountId = typeof accountOrId === 'number' ? accountOrId : (account?.id || 0);
+    return colors[accountId % colors.length];
+  };
   
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -353,10 +378,23 @@ export default function InboxPage() {
 
   const markAsRead = async (emailId: number) => {
     try {
+      // Update the backend first
       await mailApi.update(emailId, { is_read: true });
+      
+      // Only update the emails array if the email exists and is not already read
       setEmails(prevEmails => {
-        const currentEmails = Array.isArray(prevEmails) ? prevEmails : [];
-        return currentEmails.map(e => e.id === emailId ? { ...e, is_read: true } : e);
+        if (!Array.isArray(prevEmails)) return prevEmails;
+        
+        const emailIndex = prevEmails.findIndex(e => e.id === emailId);
+        if (emailIndex === -1 || prevEmails[emailIndex].is_read) {
+          // Email not found or already read, no update needed
+          return prevEmails;
+        }
+        
+        // Create a new array only when necessary
+        const newEmails = [...prevEmails];
+        newEmails[emailIndex] = { ...newEmails[emailIndex], is_read: true };
+        return newEmails;
       });
     } catch (error) {
       console.error('Failed to mark as read:', error);
@@ -684,9 +722,11 @@ export default function InboxPage() {
   };
 
   const handleEmailClick = async (email: any) => {
-    console.log('handleEmailClick called for email:', email.id, 'emails count before:', emails.length);
+    // Get safe emails inside the function
+    const currentEmails = Array.isArray(emails) ? emails : [];
+    
     // First check if we have a cached version with body
-    const cachedEmail = safeEmails.find(e => e.id === email.id);
+    const cachedEmail = currentEmails.find(e => e.id === email.id);
     
     if (cachedEmail && (cachedEmail.text_body || cachedEmail.html_body)) {
       // Use cached version if body is already loaded
@@ -699,7 +739,7 @@ export default function InboxPage() {
       return;
     }
     
-    // Otherwise fetch the body
+    // Set selected email immediately with what we have
     setSelectedEmailLocal(email);
     setSelectedEmail(email.id);
     
@@ -708,14 +748,45 @@ export default function InboxPage() {
       setLoadingEmailBody(true);
       try {
         const response = await mailApi.getEmailBody(email.id);
-        const updatedEmail = { ...email, ...response.data };
+        
+        // Fetch attachments if the email has them
+        let attachments = [];
+        if (email.has_attachments) {
+          try {
+            const attachmentResponse = await api.get(`/mail/emails/${email.id}/attachments`);
+            attachments = attachmentResponse.data;
+          } catch (error) {
+            console.error('Failed to fetch attachments:', error);
+          }
+        }
+        
+        const updatedEmail = { ...email, ...response.data, attachments };
+        
+        // Update only the selected email display
         setSelectedEmailLocal(updatedEmail);
         
-        // Update the email in the list with the fetched body for future cache hits
-        // Make sure we preserve the array properly
+        // Update the email in the list ONLY if needed for caching
+        // Use functional update to avoid triggering unnecessary re-renders
         setEmails(prevEmails => {
-          if (!Array.isArray(prevEmails)) return [updatedEmail];
-          return prevEmails.map(e => e.id === email.id ? updatedEmail : e);
+          // Early return if the array is invalid or empty
+          if (!Array.isArray(prevEmails) || prevEmails.length === 0) {
+            return prevEmails;
+          }
+          
+          // Find the email to update
+          const emailIndex = prevEmails.findIndex(e => e.id === email.id);
+          if (emailIndex === -1) {
+            return prevEmails;
+          }
+          
+          // Only update if the body was actually fetched
+          if (response.data.text_body || response.data.html_body) {
+            const newEmails = [...prevEmails];
+            newEmails[emailIndex] = { ...newEmails[emailIndex], ...response.data, attachments };
+            return newEmails;
+          }
+          
+          return prevEmails;
         });
       } catch (error) {
         console.error('Failed to fetch email body:', error);
@@ -926,7 +997,8 @@ export default function InboxPage() {
   // Helper to ensure emails is always an array
   const safeEmails = Array.isArray(emails) ? emails : [];
   
-  const getFilteredEmails = () => {
+  // Memoize filtered emails to prevent unnecessary recalculations
+  const filteredEmails = useMemo(() => {
     let filtered = safeEmails;
     
     // Filter by view
@@ -963,9 +1035,7 @@ export default function InboxPage() {
     }
     
     return filtered;
-  };
-
-  const filteredEmails = getFilteredEmails();
+  }, [safeEmails, currentView, searchQuery, emailAccounts]);
 
   // Show welcome screen for new users with no email accounts
   if (emailAccounts.length === 0 && !loading) {
@@ -1376,7 +1446,7 @@ export default function InboxPage() {
                             : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
                         }`}
                       >
-                        <div className={`w-2 h-2 rounded-full ${getAccountColor(account.id)}`} />
+                        <div className={`w-2 h-2 rounded-full ${getAccountColor(account)}`} />
                         <span className="flex-1 truncate">{account.display_name}</span>
                         {unreadCount > 0 && (
                           <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
@@ -1780,7 +1850,7 @@ export default function InboxPage() {
                         } ${selectedEmailId === email.id ? 'bg-white/[0.08]' : ''}`}
                       >
                         {/* Account color indicator */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${account ? getAccountColor(account.id) : 'bg-gray-400'}`} />
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${account ? getAccountColor(account) : 'bg-gray-400'}`} />
                         
                         <div className="flex items-start space-x-3 pl-2">
                           {/* Checkbox for bulk selection */}
@@ -1833,7 +1903,7 @@ export default function InboxPage() {
                                 </span>
                                 {/* Account label */}
                                 {account && (
-                                  <span className={`text-xs px-2 py-0.5 rounded-full text-white ${getAccountColor(account.id)}`}>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full text-white ${getAccountColor(account)}`}>
                                     {account.display_name || account.email_address.split('@')[0]}
                                   </span>
                                 )}
@@ -1842,8 +1912,13 @@ export default function InboxPage() {
                                 {formatLocalDate(email.date)}
                               </span>
                             </div>
-                            <div className={`text-sm truncate mb-1 ${!email.is_read ? 'font-medium' : ''}`}>
-                              {email.subject}
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className={`text-sm truncate flex-1 ${!email.is_read ? 'font-medium' : ''}`}>
+                                {email.subject}
+                              </div>
+                              {email.has_attachments && (
+                                <Paperclip className="w-3.5 h-3.5 text-neutral-500 flex-shrink-0" />
+                              )}
                             </div>
                             {/* Display labels */}
                             {email.labels && email.labels.length > 0 && (
@@ -2113,6 +2188,63 @@ export default function InboxPage() {
                   </div>
                 </div>
                 
+                {/* Attachments Section */}
+                {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
+                  <div className="p-4 border-b border-neutral-700">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Paperclip className="w-4 h-4 text-neutral-400" />
+                      <span className="text-sm font-medium text-neutral-300">
+                        {selectedEmail.attachments.length} Attachment{selectedEmail.attachments.length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {selectedEmail.attachments.map((attachment: any, index: number) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-3 rounded-lg bg-neutral-800/50 hover:bg-neutral-800 transition-colors group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-neutral-700 flex items-center justify-center">
+                              <FileText className="w-5 h-5 text-neutral-400" />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-sm text-neutral-200 truncate max-w-[300px]">
+                                {attachment.filename || 'Unnamed attachment'}
+                              </span>
+                              <span className="text-xs text-neutral-500">
+                                {attachment.size ? `${(attachment.size / 1024).toFixed(1)} KB` : 'Unknown size'}
+                                {attachment.content_type && ` • ${attachment.content_type.split('/')[1]?.toUpperCase() || attachment.content_type}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                // Preview functionality (if needed later)
+                                console.log('Preview attachment:', attachment);
+                              }}
+                              className="p-2 rounded-lg hover:bg-neutral-700 transition-colors"
+                              title="Preview"
+                            >
+                              <Eye className="w-4 h-4 text-neutral-400" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                // Download attachment
+                                window.open(`${process.env.NEXT_PUBLIC_API_URL}/mail/attachments/${attachment.id}/download`, '_blank');
+                              }}
+                              className="p-2 rounded-lg hover:bg-neutral-700 transition-colors"
+                              title="Download"
+                            >
+                              <Download className="w-4 h-4 text-neutral-400" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
                 <div id="email-content">
                   {loadingEmailBody ? (
                     <div className="flex flex-col items-center justify-center py-12">
@@ -2120,11 +2252,14 @@ export default function InboxPage() {
                       <p className="text-neutral-500">Loading email content...</p>
                     </div>
                   ) : (
-                    <div className="prose dark:prose-invert max-w-none">
+                    <div className="email-content-wrapper text-neutral-200">
                       {selectedEmail.html_body ? (
-                        <div dangerouslySetInnerHTML={{ __html: selectedEmail.html_body }} />
+                        <div 
+                          className="email-html-content"
+                          dangerouslySetInnerHTML={{ __html: selectedEmail.html_body }} 
+                        />
                       ) : selectedEmail.text_body ? (
-                        <pre className="whitespace-pre-wrap font-sans">{selectedEmail.text_body}</pre>
+                        <pre className="whitespace-pre-wrap font-sans text-neutral-200">{selectedEmail.text_body}</pre>
                       ) : (
                         <div className="text-neutral-500 italic">No content available</div>
                       )}

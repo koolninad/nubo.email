@@ -9,24 +9,26 @@ const router = Router();
 router.get('/', async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, email, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, username, is_active, created_at FROM email_accounts WHERE user_id = $1 ORDER BY created_at DESC',
+      'SELECT id, email_address, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, imap_username, smtp_username, is_active, created_at, oauth_account_id, auth_type FROM email_accounts WHERE user_id = $1 ORDER BY created_at DESC',
       [req.user!.id]
     );
     // Map database fields to frontend expected fields
     const accounts = result.rows.map(row => ({
       id: row.id,
-      email_address: row.email,
+      email_address: row.email_address,
       display_name: row.display_name,
       imap_host: row.imap_host,
       imap_port: row.imap_port,
       imap_secure: row.imap_secure,
-      imap_username: row.username,
+      imap_username: row.imap_username,
       smtp_host: row.smtp_host,
       smtp_port: row.smtp_port,
       smtp_secure: row.smtp_secure,
-      smtp_username: row.username,
+      smtp_username: row.smtp_username,
       is_active: row.is_active,
-      created_at: row.created_at
+      created_at: row.created_at,
+      oauth_account_id: row.oauth_account_id,
+      auth_type: row.auth_type
     }));
     res.json(accounts);
   } catch (error) {
