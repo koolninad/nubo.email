@@ -7,7 +7,10 @@
       "Bash(grep:*)",
       "Bash(chmod:*)",
       "Bash(sudo -u postgres psql:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(PGPASSWORD=$DB_PASSWORD psql -h localhost -U nubo -d nubo_email -f src/db/migrations/004_email_caching_auth.sql)",
+      "Bash(npm run build:*)",
+      "Bash(pm2 restart:*)"
     ],
     "deny": [],
     "ask": []

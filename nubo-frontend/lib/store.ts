@@ -74,7 +74,7 @@ export const useStore = create<AppState>((set) => ({
   setUser: (user) => set({ user }),
   setToken: (token) => set({ token }),
   setEmailAccounts: (emailAccounts) => set({ emailAccounts }),
-  setEmails: (emails) => set({ emails }),
+  setEmails: (emails) => set({ emails: Array.isArray(emails) ? emails : [] }),
   setSelectedAccount: (selectedAccountId) => set({ selectedAccountId }),
   setSelectedEmail: (selectedEmailId) => set({ selectedEmailId }),
   setLoading: (isLoading) => set({ isLoading }),

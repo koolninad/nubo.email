@@ -195,8 +195,13 @@ export default function InboxPage() {
     try {
       const response = await emailAccountsApi.getAll();
       setEmailAccounts(response.data);
+      // If no accounts exist, set loading to false to show welcome screen
+      if (response.data.length === 0) {
+        setLoading(false);
+      }
     } catch (error) {
       console.error('Failed to load email accounts:', error);
+      setLoading(false); // Also set loading to false on error
     }
   };
 
@@ -277,9 +282,12 @@ export default function InboxPage() {
       }
       
       if (append) {
-        setEmails([...safeEmails, ...emailData]);
+        // Ensure we're working with arrays when appending
+        const currentEmails = Array.isArray(emails) ? emails : [];
+        setEmails([...currentEmails, ...emailData]);
         setCurrentOffset(currentOffset + PAGE_SIZE);
       } else {
+        // Always set as an array
         setEmails(emailData);
         setCurrentOffset(PAGE_SIZE);
       }
@@ -287,6 +295,10 @@ export default function InboxPage() {
       setHasMore(emailData.length === PAGE_SIZE);
     } catch (error) {
       console.error('Failed to load emails:', error);
+      // Ensure emails remains an array even on error
+      if (!Array.isArray(emails)) {
+        setEmails([]);
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -342,7 +354,10 @@ export default function InboxPage() {
   const markAsRead = async (emailId: number) => {
     try {
       await mailApi.update(emailId, { is_read: true });
-      setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_read: true } : e));
+      setEmails(prevEmails => {
+        const currentEmails = Array.isArray(prevEmails) ? prevEmails : [];
+        return currentEmails.map(e => e.id === emailId ? { ...e, is_read: true } : e);
+      });
     } catch (error) {
       console.error('Failed to mark as read:', error);
     }
@@ -351,7 +366,10 @@ export default function InboxPage() {
   const toggleStar = async (emailId: number, isStarred: boolean) => {
     try {
       await mailApi.update(emailId, { is_starred: !isStarred });
-      setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_starred: !isStarred } : e));
+      setEmails(prevEmails => {
+        const currentEmails = Array.isArray(prevEmails) ? prevEmails : [];
+        return currentEmails.map(e => e.id === emailId ? { ...e, is_starred: !isStarred } : e);
+      });
       // Update selectedEmail if it's the one being toggled
       if (selectedEmail && selectedEmail.id === emailId) {
         setSelectedEmailLocal({ ...selectedEmail, is_starred: !isStarred });
@@ -566,7 +584,10 @@ export default function InboxPage() {
   const toggleRead = async (emailId: number, isRead: boolean) => {
     try {
       await mailApi.update(emailId, { is_read: !isRead });
-      setEmails(safeEmails.map(e => e.id === emailId ? { ...e, is_read: !isRead } : e));
+      setEmails(prevEmails => {
+        const currentEmails = Array.isArray(prevEmails) ? prevEmails : [];
+        return currentEmails.map(e => e.id === emailId ? { ...e, is_read: !isRead } : e);
+      });
     } catch (error) {
       console.error('Failed to toggle read status:', error);
     }
@@ -665,7 +686,7 @@ export default function InboxPage() {
   const handleEmailClick = async (email: any) => {
     console.log('handleEmailClick called for email:', email.id, 'emails count before:', emails.length);
     // First check if we have a cached version with body
-    const cachedEmail = emails.find(e => e.id === email.id);
+    const cachedEmail = safeEmails.find(e => e.id === email.id);
     
     if (cachedEmail && (cachedEmail.text_body || cachedEmail.html_body)) {
       // Use cached version if body is already loaded
@@ -691,7 +712,11 @@ export default function InboxPage() {
         setSelectedEmailLocal(updatedEmail);
         
         // Update the email in the list with the fetched body for future cache hits
-        setEmails(prevEmails => prevEmails.map(e => e.id === email.id ? updatedEmail : e));
+        // Make sure we preserve the array properly
+        setEmails(prevEmails => {
+          if (!Array.isArray(prevEmails)) return [updatedEmail];
+          return prevEmails.map(e => e.id === email.id ? updatedEmail : e);
+        });
       } catch (error) {
         console.error('Failed to fetch email body:', error);
         // Show a message if body can't be loaded
@@ -814,11 +839,40 @@ export default function InboxPage() {
     }));
   };
 
-  const handleViewChange = (view: string) => {
+  const handleViewChange = async (view: string) => {
     setCurrentView(view);
     setSelectedEmailLocal(null);
     setSelectedEmail(null);
-    // Don't reload emails when switching views, use cached data
+    
+    // Load emails for the new view to ensure we have the right data
+    setLoading(true);
+    try {
+      // For special folders, we need to sync first
+      const folderMap: Record<string, string> = {
+        'sent': 'SENT',
+        'drafts': 'DRAFTS',
+        'spam': 'SPAM',
+        'trash': 'TRASH',
+        'snoozed': 'SNOOZED',
+        'archived': 'ARCHIVE'
+      };
+      
+      // If it's a special folder, sync it first
+      if (folderMap[view] && selectedAccountId) {
+        try {
+          await api.post(`/mail/sync/${selectedAccountId}`, { folder: folderMap[view] });
+        } catch (error) {
+          console.error(`Failed to sync ${view} folder:`, error);
+        }
+      }
+      
+      // Load emails for the current view
+      await loadEmails(selectedAccountId || undefined);
+    } catch (error) {
+      console.error('Failed to load emails for view:', view, error);
+    } finally {
+      setLoading(false);
+    }
   };
   
   const handleRefresh = async (silent: boolean = false) => {

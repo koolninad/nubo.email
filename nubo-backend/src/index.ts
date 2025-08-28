@@ -1,15 +1,19 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import pg from 'pg';
 import { createClient } from 'redis';
 import authRoutes from './routes/auth';
+import authEnhancedRoutes from './routes/auth-enhanced';
+import adminRoutes from './routes/admin';
 import emailAccountRoutes from './routes/emailAccounts';
 import mailRoutes from './routes/mail';
 import mailEnhancedRoutes from './routes/mail-enhanced';
 import twoFactorRoutes from './routes/two-factor';
 import { authenticateToken } from './middleware/auth';
 import { BackgroundJobService } from './services/backgroundJobs';
+import { backgroundEmailSync } from './services/backgroundEmailSync';
 
 dotenv.config();
 
@@ -22,12 +26,16 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
-    // Allowed origins
+    // Allow any localhost origin (for Flutter and other dev servers)
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+    
+    // Allowed production origins
     const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
       'https://nubo.email',
-      'https://www.nubo.email'
+      'https://www.nubo.email',
+      'https://api.nubo.email'
     ];
     
     // Also allow any origin from environment variable
@@ -43,9 +51,12 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 app.use(express.json());
+app.use(cookieParser());
 
 // Database connection
 const pool = new pg.Pool({
@@ -61,6 +72,8 @@ redis.connect().catch(console.error);
 
 // Setup routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth-v2', authEnhancedRoutes); // Enhanced auth with refresh tokens
+app.use('/api/admin', adminRoutes); // Admin panel routes
 app.use('/api/email-accounts', authenticateToken, emailAccountRoutes);
 app.use('/api/mail', authenticateToken, mailRoutes);
 app.use('/api/mail-v2', authenticateToken, mailEnhancedRoutes); // Enhanced mail routes with caching
@@ -83,15 +96,20 @@ app.get('/api', (req, res) => {
 const backgroundJobs = new BackgroundJobService();
 backgroundJobs.initialize();
 
+// Initialize background email sync service
+backgroundEmailSync.start().catch(console.error);
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Nubo backend server running on port ${PORT}`);
   console.log(`📧 Email caching and background sync enabled`);
+  console.log(`🔐 Persistent login with refresh tokens enabled`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully...');
   backgroundJobs.stop();
+  backgroundEmailSync.stop();
   process.exit(0);
 });
