@@ -14,6 +14,7 @@ import {
 import { useStore } from '@/lib/store';
 import { emailAccountsApi, mailApi } from '@/lib/api';
 import api from '@/lib/api';
+import { notificationService } from '@/lib/notifications';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -88,6 +89,7 @@ export default function InboxPage() {
   const [syncing, setSyncing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [realUnreadCounts, setRealUnreadCounts] = useState<{ perAccount: Record<number, number>; total: number }>({ perAccount: {}, total: 0 });
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmail, setSelectedEmailLocal] = useState<any>(null);
@@ -137,6 +139,50 @@ export default function InboxPage() {
     localStorage.setItem('sidebarOpen', String(newState));
   };
 
+  // Load unread counts from backend
+  const loadUnreadCounts = async () => {
+    try {
+      console.log('Loading unread counts from API...');
+      const response = await mailApi.getUnreadCounts();
+      console.log('Unread counts response:', response.data);
+      if (response && response.data) {
+        setRealUnreadCounts(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load unread counts:', error);
+    }
+  };
+
+  // Load email accounts - moved here to be available in useEffect
+  const loadEmailAccounts = async () => {
+    console.log('loadEmailAccounts called');
+    try {
+      const response = await emailAccountsApi.getAll();
+      console.log('Email accounts response:', response.data);
+      // Only update accounts if we got a valid response
+      if (response && response.data) {
+        setEmailAccounts(response.data);
+        // If no accounts exist, set loading to false to show welcome screen
+        if (response.data.length === 0) {
+          console.log('No accounts found');
+          setLoading(false);
+        } else {
+          console.log('Accounts found, calling loadUnreadCounts...');
+          // Load real unread counts
+          await loadUnreadCounts();
+          console.log('loadUnreadCounts completed');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load email accounts:', error);
+      // Don't clear accounts on error - keep existing data
+      // Only set loading false if we have no accounts at all
+      if (emailAccounts.length === 0) {
+        setLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     console.log('Inbox page mounting...');
     
@@ -178,12 +224,38 @@ export default function InboxPage() {
     }
     
     console.log('Auth found, loading inbox...');
+    
+    // Set up OneSignal external user ID for push notifications
+    try {
+      const userData = JSON.parse(savedUser);
+      const userId = userData.id?.toString() || userData.email;
+      if (userId) {
+        notificationService.setExternalUserId(userId);
+        console.log('Setting OneSignal external user ID:', userId);
+      }
+    } catch (error) {
+      console.error('Failed to parse user data for OneSignal:', error);
+    }
 
     // Initialize audio elements
     audioRef.current.receive = new Audio('/receive.wav');
     audioRef.current.sent = new Audio('/sent.wav');
     
-    loadEmailAccounts();
+    loadEmailAccounts(); // This will also load unread counts
+    
+    // TEMPORARY: Force load unread counts directly
+    (async () => {
+      try {
+        console.log('FORCE: Loading unread counts directly...');
+        const response = await mailApi.getUnreadCounts();
+        console.log('FORCE: Unread counts response:', response.data);
+        if (response && response.data) {
+          setRealUnreadCounts(response.data);
+        }
+      } catch (error) {
+        console.error('FORCE: Failed to load unread counts:', error);
+      }
+    })();
     
     // Setup background sync
     const savedSettings = localStorage.getItem('appSettings');
@@ -216,19 +288,6 @@ export default function InboxPage() {
     }
   }, [emailAccounts, selectedAccountId]);
 
-  const loadEmailAccounts = async () => {
-    try {
-      const response = await emailAccountsApi.getAll();
-      setEmailAccounts(response.data);
-      // If no accounts exist, set loading to false to show welcome screen
-      if (response.data.length === 0) {
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error('Failed to load email accounts:', error);
-      setLoading(false); // Also set loading to false on error
-    }
-  };
 
   // Format date in user's local timezone
   const formatLocalDate = (dateString: string) => {
@@ -380,6 +439,9 @@ export default function InboxPage() {
     try {
       // Update the backend first
       await mailApi.update(emailId, { is_read: true });
+      
+      // Refresh unread counts
+      loadUnreadCounts();
       
       // Only update the emails array if the email exists and is not already read
       setEmails(prevEmails => {
@@ -733,8 +795,9 @@ export default function InboxPage() {
       setSelectedEmailLocal(cachedEmail);
       setSelectedEmail(cachedEmail.id);
       
+      // Mark as read in background (non-blocking)
       if (!cachedEmail.is_read) {
-        markAsRead(cachedEmail.id);
+        setTimeout(() => markAsRead(cachedEmail.id), 0);
       }
       return;
     }
@@ -743,66 +806,72 @@ export default function InboxPage() {
     setSelectedEmailLocal(email);
     setSelectedEmail(email.id);
     
-    // Fetch email body if not already loaded
-    if (!email.text_body && !email.html_body) {
-      setLoadingEmailBody(true);
-      try {
-        const response = await mailApi.getEmailBody(email.id);
-        
-        // Fetch attachments if the email has them
-        let attachments = [];
-        if (email.has_attachments) {
-          try {
-            const attachmentResponse = await api.get(`/mail/emails/${email.id}/attachments`);
-            attachments = attachmentResponse.data;
-          } catch (error) {
-            console.error('Failed to fetch attachments:', error);
-          }
-        }
-        
-        const updatedEmail = { ...email, ...response.data, attachments };
-        
-        // Update only the selected email display
-        setSelectedEmailLocal(updatedEmail);
-        
-        // Update the email in the list ONLY if needed for caching
-        // Use functional update to avoid triggering unnecessary re-renders
-        setEmails(prevEmails => {
-          // Early return if the array is invalid or empty
-          if (!Array.isArray(prevEmails) || prevEmails.length === 0) {
-            return prevEmails;
-          }
-          
-          // Find the email to update
-          const emailIndex = prevEmails.findIndex(e => e.id === email.id);
-          if (emailIndex === -1) {
-            return prevEmails;
-          }
-          
-          // Only update if the body was actually fetched
-          if (response.data.text_body || response.data.html_body) {
-            const newEmails = [...prevEmails];
-            newEmails[emailIndex] = { ...newEmails[emailIndex], ...response.data, attachments };
-            return newEmails;
-          }
-          
-          return prevEmails;
-        });
-      } catch (error) {
-        console.error('Failed to fetch email body:', error);
-        // Show a message if body can't be loaded
-        setSelectedEmailLocal({ 
-          ...email, 
-          text_body: 'Failed to load email content. Please try again.',
-          html_body: '<p>Failed to load email content. Please try again.</p>'
-        });
-      } finally {
-        setLoadingEmailBody(false);
-      }
+    // Mark as read in background (non-blocking)
+    if (!email.is_read) {
+      setTimeout(() => markAsRead(email.id), 0);
     }
     
-    if (!email.is_read) {
-      markAsRead(email.id);
+    // Fetch email body in background if not already loaded
+    if (!email.text_body && !email.html_body) {
+      setLoadingEmailBody(true);
+      
+      // Use setTimeout to ensure UI updates immediately
+      setTimeout(async () => {
+        try {
+          const response = await mailApi.getEmailBody(email.id);
+          
+          // Fetch attachments if the email has them
+          let attachments = [];
+          if (email.has_attachments) {
+            try {
+              const attachmentResponse = await api.get(`/mail/emails/${email.id}/attachments`);
+              attachments = attachmentResponse.data;
+            } catch (error) {
+              console.error('Failed to fetch attachments:', error);
+            }
+          }
+          
+          const updatedEmail = { ...email, ...response.data, attachments };
+          
+          // Update only the selected email display
+          setSelectedEmailLocal(updatedEmail);
+          
+          // Update the email in the list in background
+          requestAnimationFrame(() => {
+            setEmails(prevEmails => {
+              // Early return if the array is invalid or empty
+              if (!Array.isArray(prevEmails) || prevEmails.length === 0) {
+                return prevEmails;
+              }
+              
+              // Find the email to update
+              const emailIndex = prevEmails.findIndex(e => e.id === email.id);
+              if (emailIndex === -1) {
+                return prevEmails;
+              }
+              
+              // Only update if the body was actually fetched
+              if (response.data.text_body || response.data.html_body) {
+                const newEmails = [...prevEmails];
+                newEmails[emailIndex] = { ...newEmails[emailIndex], ...response.data, attachments };
+                return newEmails;
+              }
+              
+              return prevEmails;
+            });
+          });
+        } catch (error) {
+          console.error('Failed to fetch email body:', error);
+          // Show a message if body can't be loaded
+          setSelectedEmailLocal({ 
+            ...email, 
+            text_body: 'Failed to load email content. Please try again.',
+            html_body: '<p>Failed to load email content. Please try again.</p>'
+          });
+        } finally {
+          setLoadingEmailBody(false);
+        }
+      }, 0);
     }
   };
 
@@ -1001,6 +1070,11 @@ export default function InboxPage() {
   const filteredEmails = useMemo(() => {
     let filtered = safeEmails;
     
+    // Filter by selected account first
+    if (selectedAccountId) {
+      filtered = filtered.filter(e => e.email_account_id === selectedAccountId);
+    }
+    
     // Filter by view
     if (currentView === 'starred') {
       filtered = filtered.filter(e => e.is_starred && !e.is_archived && !e.is_trash);
@@ -1035,31 +1109,159 @@ export default function InboxPage() {
     }
     
     return filtered;
-  }, [safeEmails, currentView, searchQuery, emailAccounts]);
+  }, [safeEmails, currentView, searchQuery, emailAccounts, selectedAccountId]);
 
-  // Show welcome screen for new users with no email accounts
-  if (emailAccounts.length === 0 && !loading) {
+  // Compute counts for navigation pane - use real counts from backend
+  const navigationCounts = useMemo(() => {
+    // For navigation items, filter by selected account if one is selected
+    const emailsToCount = selectedAccountId 
+      ? safeEmails.filter(e => e.email_account_id === selectedAccountId)
+      : safeEmails;
+    
+    // Use real unread counts from backend for accuracy
+    const perAccountUnread = realUnreadCounts.perAccount || {};
+    const totalUnread = realUnreadCounts.total || 0;
+    
+    console.log('Navigation counts calculation:', {
+      realUnreadCounts,
+      perAccountUnread,
+      totalUnread,
+      selectedAccountId
+    });
+    
+    // Calculate inbox count based on selected account
+    const inboxUnreadCount = selectedAccountId 
+      ? (perAccountUnread[selectedAccountId] || 0)
+      : totalUnread;
+    
+    return {
+      inbox: inboxUnreadCount,
+      snoozed: emailsToCount.filter(e => e.is_snoozed && !e.is_trash).length,
+      sent: emailsToCount.filter(e => {
+        const userEmails = emailAccounts.map(acc => acc.email_address.toLowerCase());
+        return userEmails.includes(e.from_address?.toLowerCase()) && !e.is_trash;
+      }).length,
+      drafts: emailsToCount.filter(e => e.is_draft && !e.is_trash).length,
+      starred: emailsToCount.filter(e => e.is_starred && !e.is_trash).length,
+      archived: emailsToCount.filter(e => e.is_archived && !e.is_trash).length,
+      spam: emailsToCount.filter(e => e.is_spam && !e.is_trash).length,
+      trash: emailsToCount.filter(e => e.is_trash).length,
+      allAccountsUnread: totalUnread,
+      perAccountUnread: perAccountUnread
+    };
+  }, [safeEmails, selectedAccountId, emailAccounts, realUnreadCounts]);
+
+  // Check if this is a brand new user (no accounts have ever been loaded)
+  const isNewUser = emailAccounts.length === 0 && !loading && !selectedAccountId;
+  
+  // Show welcome screen for brand new users with no email accounts
+  if (isNewUser && safeEmails.length === 0) {
     return (
-      <div className="h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-950">
-        <div className="text-center space-y-6 max-w-md px-6">
-          <div className="w-20 h-20 bg-neutral-100 dark:bg-neutral-900 rounded-2xl flex items-center justify-center mx-auto">
-            <Mail className="w-10 h-10 text-neutral-600 dark:text-neutral-400" />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-neutral-800 p-4">
+        <div className="container mx-auto max-w-6xl py-8">
+          {/* Header */}
+          <div className="text-center mb-12">
+            <div className="flex justify-center mb-4">
+              <div className="w-20 h-20 bg-blue-600 dark:bg-blue-500 rounded-2xl flex items-center justify-center">
+                <Mail className="w-10 h-10 text-white" />
+              </div>
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-3">
+              Welcome to Nubo Email
+            </h1>
+            <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+              Connect your email accounts securely. Choose quick setup with OAuth or manual configuration with IMAP.
+            </p>
           </div>
-          <h2 className="text-3xl font-bold">Welcome to Nubo!</h2>
-          <p className="text-neutral-600 dark:text-neutral-400">
-            Get started by adding your first email account. You can connect Gmail, Outlook, Yahoo, or any IMAP/SMTP email provider.
-          </p>
-          <Button 
-            size="lg"
-            onClick={() => setAddAccountOpen(true)}
-            className="px-8"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Add Your First Email Account
-          </Button>
-          <p className="text-sm text-neutral-500">
-            Your emails are securely stored and never shared with third parties.
-          </p>
+
+          {/* Quick Setup with OAuth */}
+          <div className="mb-12">
+            <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-6 text-center">
+              Add Your First Email Account
+            </h2>
+            <div className="grid grid-cols-2 gap-6 mb-8 max-w-2xl mx-auto">
+              {/* Gmail */}
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await api.post('/oauth/welcome/auth/init/google', {
+                      redirectUrl: window.location.origin + '/inbox'
+                    });
+                    if (response.data.authUrl) {
+                      window.location.href = response.data.authUrl;
+                    }
+                  } catch (error) {
+                    console.error('Failed to init Google OAuth:', error);
+                    showToast('Failed to connect to Gmail', 'error');
+                  }
+                }}
+                className="group bg-white dark:bg-neutral-800 rounded-xl p-8 hover:shadow-lg transition-all hover:scale-105 border-2 border-gray-200 dark:border-neutral-700 hover:border-red-500"
+              >
+                <img src="/logos/google.svg" alt="Gmail" className="w-16 h-16 mx-auto mb-4" />
+                <p className="font-semibold text-lg text-gray-900 dark:text-white">Gmail</p>
+                <p className="text-sm text-green-600 dark:text-green-400 mt-2">OAuth 2.0 • Secure</p>
+              </button>
+
+              {/* Outlook */}
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await api.post('/oauth/welcome/auth/init/microsoft', {
+                      redirectUrl: window.location.origin + '/inbox'
+                    });
+                    if (response.data.authUrl) {
+                      window.location.href = response.data.authUrl;
+                    }
+                  } catch (error) {
+                    console.error('Failed to init Microsoft OAuth:', error);
+                    showToast('Failed to connect to Outlook', 'error');
+                  }
+                }}
+                className="group bg-white dark:bg-neutral-800 rounded-xl p-8 hover:shadow-lg transition-all hover:scale-105 border-2 border-gray-200 dark:border-neutral-700 hover:border-blue-500"
+              >
+                <img src="/logos/outlook.svg" alt="Outlook" className="w-16 h-16 mx-auto mb-4" />
+                <p className="font-semibold text-lg text-gray-900 dark:text-white">Outlook</p>
+                <p className="text-sm text-green-600 dark:text-green-400 mt-2">OAuth 2.0 • Secure</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="relative mb-12">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300 dark:border-neutral-600"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-neutral-800 text-gray-500 dark:text-gray-400">
+                OR
+              </span>
+            </div>
+          </div>
+
+          {/* Manual Setup */}
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
+              Manual Setup with IMAP/SMTP
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              Configure any email provider manually with IMAP and SMTP settings
+            </p>
+            <Button 
+              size="lg"
+              onClick={() => setAddAccountOpen(true)}
+              className="px-8"
+            >
+              <Settings className="w-5 h-5 mr-2" />
+              Manual Email Setup
+            </Button>
+          </div>
+
+          {/* Security Note */}
+          <div className="mt-12 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              🔒 Your credentials are encrypted and never shared with third parties
+            </p>
+          </div>
         </div>
         
         {/* Add Account Dialog */}
@@ -1314,9 +1516,9 @@ export default function InboxPage() {
               >
                 <Inbox className="w-4 h-4" />
                 <span className="font-medium">Inbox</span>
-                {safeEmails.filter(e => !e.is_archived && !e.is_draft && !e.is_spam && !e.is_trash && !e.is_snoozed && !e.is_read).length > 0 && (
+                {navigationCounts.inbox > 0 && (
                   <span className="ml-auto bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                    {safeEmails.filter(e => !e.is_archived && !e.is_draft && !e.is_spam && !e.is_trash && !e.is_snoozed && !e.is_read).length}
+                    {navigationCounts.inbox}
                   </span>
                 )}
               </button>
@@ -1328,7 +1530,7 @@ export default function InboxPage() {
               >
                 <Clock className="w-4 h-4" />
                 <span>Snoozed</span>
-                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_snoozed && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{navigationCounts.snoozed}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('sent')}
@@ -1347,7 +1549,7 @@ export default function InboxPage() {
               >
                 <FileText className="w-4 h-4" />
                 <span>Drafts</span>
-                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_draft && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{navigationCounts.drafts}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('starred')}
@@ -1357,7 +1559,7 @@ export default function InboxPage() {
               >
                 <Star className="w-4 h-4" />
                 <span>Starred</span>
-                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_starred && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{navigationCounts.starred}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('archived')}
@@ -1367,7 +1569,7 @@ export default function InboxPage() {
               >
                 <Archive className="w-4 h-4" />
                 <span>Archive</span>
-                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_archived && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{navigationCounts.archived}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('spam')}
@@ -1377,7 +1579,7 @@ export default function InboxPage() {
               >
                 <AlertCircle className="w-4 h-4" />
                 <span>Spam</span>
-                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_spam && !e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{navigationCounts.spam}</span>
               </button>
               <button 
                 onClick={() => handleViewChange('trash')}
@@ -1387,7 +1589,7 @@ export default function InboxPage() {
               >
                 <Trash className="w-4 h-4" />
                 <span>Trash</span>
-                <span className="ml-auto text-xs text-neutral-500">{safeEmails.filter(e => e.is_trash).length}</span>
+                <span className="ml-auto text-xs text-neutral-500">{navigationCounts.trash}</span>
               </button>
             </nav>
 
@@ -1412,23 +1614,16 @@ export default function InboxPage() {
                   >
                     <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
                     <span className="flex-1">All Accounts</span>
-                    {safeEmails.filter(e => !e.is_read && !e.is_archived && !e.is_spam && !e.is_trash && !e.is_snoozed).length > 0 && (
+                    {navigationCounts.allAccountsUnread > 0 && (
                       <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                        {safeEmails.filter(e => !e.is_read && !e.is_archived && !e.is_spam && !e.is_trash && !e.is_snoozed).length}
+                        {navigationCounts.allAccountsUnread}
                       </span>
                     )}
                   </button>
                 )}
                 {emailAccounts.map(account => {
-                  // Count unread emails for this account
-                  const unreadCount = safeEmails.filter(e => 
-                    e.email_account_id === account.id && 
-                    !e.is_read && 
-                    !e.is_archived && 
-                    !e.is_spam && 
-                    !e.is_trash && 
-                    !e.is_snoozed
-                  ).length;
+                  // Use pre-calculated unread count for this account
+                  const unreadCount = navigationCounts.perAccountUnread[account.id] || 0;
                   
                   return (
                     <div key={account.id} className="relative">

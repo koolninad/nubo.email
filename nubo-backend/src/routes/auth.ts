@@ -93,7 +93,11 @@ router.post('/login', async (req, res) => {
 
   try {
     const result = await pool.query(
-      'SELECT id, username, email, password_hash, two_factor_enabled FROM users WHERE username = $1 OR email = $1',
+      `SELECT u.id, u.username, u.email, u.password_hash, u.two_factor_enabled, u.is_admin,
+              o.id as organization_id, o.name as organization_name
+       FROM users u
+       LEFT JOIN organizations o ON u.email = o.contact_email
+       WHERE u.username = $1 OR u.email = $1`,
       [username]
     );
 
@@ -127,7 +131,10 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        isAdmin: user.is_admin || false,
+        organizationId: user.organization_id,
+        organizationName: user.organization_name
       },
       token
     });

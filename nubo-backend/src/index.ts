@@ -12,6 +12,7 @@ import mailRoutes from './routes/mail';
 // import mailEnhancedRoutes from './routes/mail-enhanced';
 import twoFactorRoutes from './routes/two-factor';
 import oauthRoutes from './routes/oauth.routes';
+import organizationsRoutes from './routes/organizations';
 import { authenticateToken } from './middleware/auth';
 import { BackgroundJobService } from './services/backgroundJobs';
 import { backgroundEmailSync } from './services/backgroundEmailSync';
@@ -80,6 +81,7 @@ app.use('/api/mail', authenticateToken, mailRoutes);
 // app.use('/api/mail-v2', authenticateToken, mailEnhancedRoutes); // Enhanced mail routes with caching
 app.use('/api/2fa', twoFactorRoutes);
 app.use('/api/oauth', oauthRoutes); // OAuth routes for provider authentication
+app.use('/api', organizationsRoutes); // Organizations and onboarding routes
 
 // Also mount OAuth routes at root for Google callback compatibility
 app.use('/', oauthRoutes);

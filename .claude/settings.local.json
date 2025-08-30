@@ -15,7 +15,13 @@
       "Bash(PGPASSWORD=$DB_PASSWORD psql -h localhost -U nubo -d nubo_email -c \"\\d cached_emails\")",
       "Bash(curl:*)",
       "Bash(export PGPASSWORD=nubo123)",
-      "Bash(psql:*)"
+      "Bash(psql:*)",
+      "Bash(pm2 status:*)",
+      "Bash(pm2 save:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(ls:*)",
+      "Bash(PGPASSWORD=nubo123 psql -h localhost -p 5433 -U nubo -d nubo_email -f /var/www/nubo/nubo-backend/src/db/migrations/005_organizations.sql)"
     ],
     "deny": [],
     "ask": []

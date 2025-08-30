@@ -97,6 +97,7 @@ export const emailAccountsApi = {
 export const mailApi = {
   getInbox: (params?: { account_id?: number; limit?: number; offset?: number }) =>
     api.get('/mail/inbox', { params }),
+  getUnreadCounts: () => api.get('/mail/unread-counts'),
   getEmailBody: (emailId: number) => api.get(`/mail/email/${emailId}/body`),
   sync: (accountId: number) => api.post(`/mail/sync/${accountId}`),
   send: (data: any) => api.post('/mail/send', data),

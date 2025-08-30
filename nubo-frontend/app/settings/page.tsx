@@ -681,8 +681,8 @@ export default function SettingsPage() {
                         onClick={async () => {
                           try {
                             const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-                            const response = await fetch(`${apiUrl}/mail/test-notification`, {
+                            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+                            const response = await fetch(`${apiUrl}/api/mail/test-notification`, {
                               method: 'POST',
                               headers: {
                                 'Authorization': `Bearer ${token}`,
@@ -691,9 +691,18 @@ export default function SettingsPage() {
                             });
                             
                             if (response.ok) {
-                              showToast('Test notification sent!', 'success');
+                              showToast('Test notification sent! Check your browser notifications.', 'success');
                             } else {
-                              showToast('Failed to send test notification', 'error');
+                              const error = await response.json();
+                              if (response.status === 400) {
+                                console.log('Test notification failed:', error);
+                                showToast(
+                                  error.message || 'No devices subscribed. Please enable notifications first, then refresh the page and try again.', 
+                                  'warning'
+                                );
+                              } else {
+                                showToast(error.error || 'Failed to send test notification', 'error');
+                              }
                             }
                           } catch (error) {
                             showToast('Failed to send test notification', 'error');

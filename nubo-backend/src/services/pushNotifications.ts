@@ -24,6 +24,13 @@ export class PushNotificationService {
     notification: PushNotification
   ): Promise<boolean> {
     try {
+      console.log('🔔 Attempting to send push notification:', {
+        userId,
+        title: notification.title,
+        apiKeyConfigured: this.REST_API_KEY !== 'YOUR_ONESIGNAL_REST_API_KEY',
+        appId: this.APP_ID
+      });
+      
       const payload = {
         app_id: this.APP_ID,
         include_external_user_ids: [userId],
@@ -40,6 +47,8 @@ export class PushNotificationService {
         }] : undefined
       };
 
+      console.log('📤 Sending OneSignal request with payload:', JSON.stringify(payload, null, 2));
+      
       const response = await axios.post(this.API_URL, payload, {
         headers: {
           'Authorization': `Basic ${this.REST_API_KEY}`,
@@ -47,18 +56,32 @@ export class PushNotificationService {
         }
       });
 
-      console.log('✅ Push notification sent successfully:', {
-        userId,
-        title: notification.title,
-        recipients: response.data.recipients
+      console.log('📬 OneSignal API response:', {
+        id: response.data.id,
+        recipients: response.data.recipients,
+        external_id: response.data.external_id,
+        errors: response.data.errors,
+        warnings: response.data.warnings,
+        invalid_player_ids: response.data.invalid_player_ids,
+        invalid_external_user_ids: response.data.invalid_external_user_ids
       });
+
+      if (response.data.recipients === 0) {
+        console.warn('⚠️ No recipients for notification - user may not be subscribed:', {
+          userId,
+          errors: response.data.errors,
+          warnings: response.data.warnings,
+          invalid_external_user_ids: response.data.invalid_external_user_ids
+        });
+      }
 
       return response.data.recipients > 0;
     } catch (error: any) {
       console.error('❌ Failed to send push notification:', {
         userId,
         title: notification.title,
-        error: error.response?.data || error.message
+        error: error.response?.data || error.message,
+        status: error.response?.status
       });
       return false;
     }
@@ -197,6 +220,14 @@ export class PushNotificationService {
    * Send test notification
    */
   static async sendTestNotification(userId: string): Promise<boolean> {
+    console.log('🧪 Sending test notification to user:', userId);
+    console.log('🔑 OneSignal configuration:', {
+      appId: this.APP_ID,
+      apiKeyConfigured: this.REST_API_KEY !== 'YOUR_ONESIGNAL_REST_API_KEY',
+      apiKeyLength: this.REST_API_KEY.length,
+      frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
+    });
+    
     const notification: PushNotification = {
       title: 'Test Notification from Nubo',
       message: 'Your push notifications are working correctly! 🎉',

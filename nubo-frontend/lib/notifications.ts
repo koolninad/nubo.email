@@ -129,7 +129,8 @@ export class NotificationService {
     }
 
     try {
-      await window.OneSignal.User.addAlias('external_id', userId);
+      // Use OneSignal.login to set the external user ID
+      await window.OneSignal.login(userId);
       console.log('OneSignal external user ID set:', userId);
     } catch (error) {
       console.error('Failed to set external user ID:', error);
@@ -142,7 +143,8 @@ export class NotificationService {
     }
 
     try {
-      await window.OneSignal.User.removeAlias('external_id');
+      // Use OneSignal.logout to remove the external user ID
+      await window.OneSignal.logout();
     } catch (error) {
       console.error('Failed to remove external user ID:', error);
     }

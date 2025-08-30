@@ -56,12 +56,18 @@ export default function LoginPage() {
         localStorage.setItem('user', JSON.stringify(user));
         localStorage.setItem('rememberMe', 'true');
         localStorage.setItem('loginExpiry', (Date.now() + 30 * 24 * 60 * 60 * 1000).toString());
+        if (user.organizationId) {
+          localStorage.setItem('organizationId', user.organizationId.toString());
+        }
       } else {
         // Store in sessionStorage for current session only
         sessionStorage.setItem('token', token);
         sessionStorage.setItem('user', JSON.stringify(user));
         localStorage.removeItem('rememberMe');
         localStorage.removeItem('loginExpiry');
+        if (user.organizationId) {
+          sessionStorage.setItem('organizationId', user.organizationId.toString());
+        }
       }
       
       setUser(user);
@@ -78,8 +84,14 @@ export default function LoginPage() {
       // Force a hard navigation using window.location
       // This ensures the page fully reloads and re-checks auth
       setTimeout(() => {
-        console.log('Redirecting to inbox...');
-        window.location.href = '/inbox';
+        // If user has an organization, redirect to org-admin
+        if (user.organizationId) {
+          console.log('Redirecting to org-admin...');
+          window.location.href = '/org-admin';
+        } else {
+          console.log('Redirecting to inbox...');
+          window.location.href = '/inbox';
+        }
       }, 100);
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || 'Invalid username or password';

@@ -16,37 +16,117 @@ import {
 
 const router = Router();
 
+// Get unread counts for all accounts
+router.get('/unread-counts', async (req: AuthRequest, res) => {
+  try {
+    const query = `
+      SELECT 
+        ea.id as account_id,
+        COUNT(CASE WHEN NOT ce.is_read AND NOT ce.is_archived AND NOT ce.is_spam AND NOT ce.is_trash AND NOT ce.is_snoozed AND NOT ce.is_deleted THEN 1 END) as unread_count
+      FROM email_accounts ea
+      LEFT JOIN cached_emails ce ON ea.id = ce.email_account_id
+      WHERE ea.user_id = $1
+      GROUP BY ea.id
+    `;
+    
+    const result = await pool.query(query, [req.user!.id]);
+    
+    // Convert to object for easy lookup
+    const counts: Record<number, number> = {};
+    let total = 0;
+    result.rows.forEach(row => {
+      counts[row.account_id] = parseInt(row.unread_count) || 0;
+      total += parseInt(row.unread_count) || 0;
+    });
+    
+    res.json({ 
+      perAccount: counts,
+      total: total 
+    });
+  } catch (error) {
+    console.error('Get unread counts error:', error);
+    res.status(500).json({ error: 'Failed to fetch unread counts' });
+  }
+});
+
 router.get('/inbox', async (req: AuthRequest, res) => {
   const { account_id, limit = 50, offset = 0 } = req.query;
 
   try {
-    let query: string;
-    let params: any[];
-
     if (account_id) {
-      query = `
-        SELECT ce.*, ea.email as account_email 
+      // Single account - fetch normally
+      const query = `
+        SELECT ce.*, ea.email as account_email, ea.auth_type 
         FROM cached_emails ce
         JOIN email_accounts ea ON ce.email_account_id = ea.id
         WHERE ea.user_id = $1 AND ea.id = $2 AND NOT ce.is_deleted
         ORDER BY ce.date DESC
         LIMIT $3 OFFSET $4
       `;
-      params = [req.user!.id, account_id, limit, offset];
+      const params = [req.user!.id, account_id, limit, offset];
+      console.log(`📧 Loading emails for account ${account_id}, user ${req.user!.id}`);
+      
+      const result = await pool.query(query, params);
+      res.json(result.rows);
     } else {
-      query = `
-        SELECT ce.*, ea.email as account_email 
-        FROM cached_emails ce
-        JOIN email_accounts ea ON ce.email_account_id = ea.id
-        WHERE ea.user_id = $1 AND NOT ce.is_deleted
-        ORDER BY ce.date DESC
-        LIMIT $2 OFFSET $3
-      `;
-      params = [req.user!.id, limit, offset];
+      // All accounts - fetch from each account and merge
+      console.log(`📧 Loading ALL emails for user ${req.user!.id} - fetching from each account`);
+      
+      // First get all user's accounts
+      const accountsResult = await pool.query(
+        'SELECT id FROM email_accounts WHERE user_id = $1',
+        [req.user!.id]
+      );
+      
+      if (accountsResult.rows.length === 0) {
+        return res.json([]);
+      }
+      
+      // Fetch emails from each account (100 emails per account)
+      const emailPromises = accountsResult.rows.map(account => {
+        const perAccountLimit = 100; // Fetch 100 emails from each account
+        const query = `
+          SELECT ce.*, ea.email as account_email, ea.auth_type, ea.display_name
+          FROM cached_emails ce
+          JOIN email_accounts ea ON ce.email_account_id = ea.id
+          WHERE ea.user_id = $1 AND ea.id = $2 AND NOT ce.is_deleted
+          ORDER BY ce.date DESC
+          LIMIT $3
+        `;
+        return pool.query(query, [req.user!.id, account.id, perAccountLimit]);
+      });
+      
+      // Wait for all queries to complete
+      const results = await Promise.all(emailPromises);
+      
+      // Merge all emails
+      let allEmails: any[] = [];
+      results.forEach(result => {
+        allEmails = allEmails.concat(result.rows);
+      });
+      
+      // Sort by date DESC and apply limit
+      allEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      // Apply pagination
+      const paginatedEmails = allEmails.slice(Number(offset), Number(offset) + Number(limit));
+      
+      // Log distribution
+      const authTypes = paginatedEmails.reduce((acc: any, row: any) => {
+        acc[row.auth_type] = (acc[row.auth_type] || 0) + 1;
+        return acc;
+      }, {});
+      const accountDist = paginatedEmails.reduce((acc: any, row: any) => {
+        acc[row.display_name || row.account_email] = (acc[row.display_name || row.account_email] || 0) + 1;
+        return acc;
+      }, {});
+      
+      console.log(`📊 Email distribution by auth: ${JSON.stringify(authTypes)}`);
+      console.log(`📊 Email distribution by account: ${JSON.stringify(accountDist)}`);
+      console.log(`📊 Total emails fetched: ${allEmails.length}, Returned: ${paginatedEmails.length}`);
+      
+      res.json(paginatedEmails);
     }
-
-    const result = await pool.query(query, params);
-    res.json(result.rows);
   } catch (error) {
     console.error('Get inbox error:', error);
     res.status(500).json({ error: 'Failed to fetch emails' });
@@ -838,18 +918,80 @@ router.patch('/:emailId', async (req: AuthRequest, res) => {
   }
 });
 
+// Debug notification configuration (no auth for testing)
+router.get('/notification-debug-test', async (req: AuthRequest, res) => {
+  try {
+    const apiKeyConfigured = !!process.env.ONESIGNAL_REST_API_KEY;
+    const apiKeyLength = process.env.ONESIGNAL_REST_API_KEY?.length || 0;
+    const apiKeyValue = process.env.ONESIGNAL_REST_API_KEY || 'NOT_SET';
+    
+    console.log('🔍 Debug endpoint called - OneSignal config:', {
+      apiKeyConfigured,
+      apiKeyLength,
+      apiKeyValue: apiKeyValue.substring(0, 20) + '...'
+    });
+    
+    res.json({
+      oneSignalAppId: 'fe4fe7fa-55cd-4d38-8ce7-2e8648879bbf',
+      apiKeyConfigured,
+      apiKeyLength,
+      apiKeyPrefix: apiKeyValue.substring(0, 20) + '...',
+      nodeEnv: process.env.NODE_ENV,
+      frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: 'Debug failed' });
+  }
+});
+
+// Debug notification configuration
+router.get('/notification-debug', async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id?.toString();
+    const apiKeyConfigured = !!process.env.ONESIGNAL_REST_API_KEY;
+    const apiKeyLength = process.env.ONESIGNAL_REST_API_KEY?.length || 0;
+    
+    res.json({
+      userId,
+      oneSignalAppId: 'fe4fe7fa-55cd-4d38-8ce7-2e8648879bbf',
+      apiKeyConfigured,
+      apiKeyLength,
+      apiKeyPrefix: process.env.ONESIGNAL_REST_API_KEY?.substring(0, 10) + '...',
+      nodeEnv: process.env.NODE_ENV,
+      frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: 'Debug failed' });
+  }
+});
+
 // Test push notification endpoint
 router.post('/test-notification', async (req: AuthRequest, res) => {
   try {
-    const success = await PushNotificationService.sendTestNotification(req.user!.id.toString());
+    console.log('📬 Test notification request received for user:', req.user?.id);
+    
+    if (!req.user?.id) {
+      console.error('❌ No user ID in request');
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    
+    const success = await PushNotificationService.sendTestNotification(req.user.id.toString());
     
     if (success) {
+      console.log('✅ Test notification sent successfully');
       res.json({ message: 'Test notification sent successfully' });
     } else {
-      res.status(400).json({ error: 'Failed to send test notification' });
+      console.log('⚠️ Test notification failed - user may not be subscribed');
+      res.status(400).json({ 
+        error: 'No active notification subscriptions found',
+        message: 'Please ensure you have:\n1. Enabled notifications in your browser\n2. Allowed notifications for this site\n3. Refreshed the page after enabling notifications',
+        userId: req.user.id.toString()
+      });
     }
   } catch (error) {
-    console.error('Test notification error:', error);
+    console.error('❌ Test notification error:', error);
     res.status(500).json({ error: 'Failed to send test notification' });
   }
 });
